@@ -61,7 +61,7 @@ fn inside_string(input: &[u8]) -> IResult<&[u8], String> {
     IResult::Done(i, string)
 }
 
-/// read input up to the first occurence of the provided char that is not escaped
+/// read input up to the first occurrence of the provided char that is not escaped
 fn take_until_non_escaped_char(input: &[u8], stop_char: char) -> IResult<&[u8], &str> {
     println!("test: {:?}", input);
     // determines whether the next character is escaped
