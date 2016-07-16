@@ -15,7 +15,8 @@ pub enum NixExpr {
 pub enum NixValue {
     String(String),
     Null,
-    Integer(i64)
+    Integer(i64),
+    Boolean(bool)
 }
 
 /*********************** Strings *****************************/
@@ -132,6 +133,15 @@ named!(pub integer<&[u8], NixValue>,
 );
 /*************************************************************/
 
+/*********************** Booleans ****************************/
+named!(pub boolean<&[u8], NixValue>,
+    alt!(
+        map!(tag!("false"), |_| NixValue::Boolean(false))
+    |   map!(tag!("true"), |_| NixValue::Boolean(true))
+    )
+);
+/*************************************************************/
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +211,19 @@ mod tests {
         case: "../test_cases/integers/integer1.nix",
         expected: NixValue::Integer(123),
         func: integer
+     );
+
+    mk_parse_test!(
+        name: nix_boolean_true,
+        case: "../test_cases/booleans/true.nix",
+        expected: NixValue::Boolean(true),
+        func: boolean
+     );
+
+    mk_parse_test!(
+        name: nix_boolean_false,
+        case: "../test_cases/booleans/false.nix",
+        expected: NixValue::Boolean(false),
+        func: boolean
      );
 }
