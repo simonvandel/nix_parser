@@ -60,6 +60,8 @@ named!(pub nix_func<&[u8], NixFunc>,
             alt!(
                 nix_value
             |   nix_assert
+            |   nix_if
+            |   nix_with
             ) ~
         multispace?,
 
