@@ -14,7 +14,8 @@ pub enum NixExpr {
 #[derive(Eq, PartialEq, Debug)]
 pub enum NixValue {
     String(String),
-    Null
+    Null,
+    Integer(i64)
 }
 
 /*********************** Strings *****************************/
@@ -114,6 +115,23 @@ named!(pub null<&[u8], NixValue>,
 );
 /*************************************************************/
 
+/*********************** Integers ****************************/
+named!(pub integer<&[u8], NixValue>,
+    map_res!(
+        digit,
+        |digits:&[u8]| {
+            // TODO real error messages instead of just zero
+            str::from_utf8(digits)
+                .map_err(|_| 0)
+                .and_then(|digit_str:&str| digit_str.parse::<i64>()
+                    .map_err(|_| 0)
+                )
+                .map(NixValue::Integer)
+        }
+    )
+);
+/*************************************************************/
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -176,5 +194,12 @@ mod tests {
         case: "../test_cases/null.nix",
         expected: NixValue::Null,
         func: null
+     );
+
+    mk_parse_test!(
+        name: nix_integer1,
+        case: "../test_cases/integers/integer1.nix",
+        expected: NixValue::Integer(123),
+        func: integer
      );
 }
