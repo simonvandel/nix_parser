@@ -9,6 +9,7 @@ use std::str;
 pub enum NixExpr {
     Function,
     Value(NixValue),
+    Assert(Box<NixExpr>, Box<NixExpr>)
 }
 
 #[derive(Eq, PartialEq, Debug)]
@@ -19,6 +20,35 @@ pub enum NixValue {
     Boolean(bool),
     Path(String)
 }
+
+/*********************** Expressions *****************************/
+named!(pub nix_expr<&[u8], NixExpr>,
+    chain!(
+        multispace? ~
+        expr:
+            alt!(
+                nix_value
+            |   assert
+            ) ~
+        multispace?,
+
+        || expr
+    )
+);
+
+named!(pub nix_value<&[u8], NixExpr>,
+    map!(
+        alt!(
+            string
+        |   null
+        |   integer
+        |   boolean
+        |   path
+        ),
+        NixExpr::Value
+    )
+);
+/*****************************************************************/
 
 /*********************** Strings *****************************/
 /// There are two syntactic variants of strings:
@@ -215,6 +245,20 @@ named!(pub path<&[u8], NixValue>,
 );
 /*************************************************************/
 
+/*********************** Assert ****************************/
+named!(pub assert<&[u8], NixExpr>,
+    chain!(
+        tag!("assert") ~
+        condition: nix_expr ~
+        tag!(";") ~
+        result: nix_expr,
+
+        || {
+            NixExpr::Assert(Box::new(condition), Box::new(result))
+        }
+    )
+);
+/*************************************************************/
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -319,5 +363,16 @@ mod tests {
         case: "../test_cases/paths/3.nix",
         expected: NixValue::Path("./builder.sh".to_string()),
         func: path
+     );
+
+    mk_parse_test!(
+        name: nix_assert1,
+        case: "../test_cases/asserts/1.nix",
+        expected: {
+            NixExpr::Assert(
+                Box::new(NixExpr::Value(NixValue::Boolean(false))),
+                Box::new(NixExpr::Value(NixValue::Null)))
+        },
+        func: assert
      );
 }
