@@ -103,7 +103,6 @@ fn take_until_non_escaped_char(input: &[u8], stop_char:char) -> IResult<&[u8], &
 
 /*************************************************************/
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,10 +110,10 @@ mod tests {
 
     // Helper macro for defining parser tests
     macro_rules! mk_parse_test {
-        ( name: $testName:ident, input: $input:expr, expected: $expected:expr, func: $test_fn:expr ) => {
+        ( name: $testName:ident, case: $test_case:expr, expected: $expected:expr, func: $test_fn:expr ) => {
             #[test]
             fn $testName () {
-                let res = $test_fn($input);
+                let res = $test_fn(include_bytes!($test_case));
                 match res {
                     IResult::Done(_, output) => assert_eq!($expected, output),
                     IResult::Incomplete(rest) => panic!("Incomplete with rest: {:?}", rest),
@@ -126,36 +125,38 @@ mod tests {
 
     mk_parse_test!(
         name: nix_empty_single_line_string,
-        input: b"\"\"",
+        case: "../test_cases/strings/single_line_empty.nix",
         expected: NixValue::String("".to_string()),
         func: string
      );
 
     mk_parse_test!(
         name: nix_inhabited_single_line_string_no_whitespace,
-        input: b"\"z\"",
+        case: "../test_cases/strings/single_line_no_whitespace.nix",
         expected: NixValue::String("z".to_string()),
         func: string
      );
 
     mk_parse_test!(
         name: nix_inhabited_single_line_string,
-        input: b"\"i am a string with whitespace\"",
+        case: "../test_cases/strings/single_line1.nix",
         expected: NixValue::String("i am a string with whitespace".to_string()),
         func: string
      );
 
     mk_parse_test!(
         name: nix_inhabited_escaped_quotation_single_line_string,
-        input: b"\"x\\\"\"",
+        case: "../test_cases/strings/single_line_escaped1.nix",
         expected: NixValue::String("x\\\"".to_string()),
         func: string
      );
 
     mk_parse_test!(
         name: nix_inhabited_escaped_quotation2_single_line_string,
-        input: b"\"x\\\"x\"",
+        case: "../test_cases/strings/single_line_escaped2.nix",
         expected: NixValue::String("x\\\"x".to_string()),
         func: string
      );
+
+    // TODO: multi-line strings
 }
