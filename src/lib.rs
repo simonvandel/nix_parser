@@ -432,7 +432,7 @@ mod tests {
 
     mk_parse_test!(
         name: nix_identifier,
-        case: "../test_cases/identifiers/1.nix",
+        case: "../test_cases/identifiers/1_ignore_validate.nix",
         expected: NixIdentifier::Ident("x".to_string()),
         func: identifier
      );

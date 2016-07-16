@@ -7,6 +7,8 @@ import sys
 
 nix_files = glob.iglob("test_cases/**/*.nix", recursive=True)
 for nix_file in nix_files:
-    completed_process = subprocess.run(["nix-instantiate", "--parse", nix_file])
-    if completed_process.returncode != 0:
-        sys.exit("ERROR: " + nix_file + " does not seem to be a valid Nix file!")
+    # we do not want to validate all files
+    if not nix_file.endswith("_ignore_validate.nix"):
+        completed_process = subprocess.run(["nix-instantiate", "--parse", nix_file])
+        if completed_process.returncode != 0:
+            sys.exit("ERROR: " + nix_file + " does not seem to be a valid Nix file!")
