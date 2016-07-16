@@ -16,79 +16,27 @@ pub enum NixValue {
     String(String),
 }
 
-
-/*pub fn string(input: &[u8]) -> IResult<&[u8], NixValue> {
-    let converter = |x: &[u8]| match x {
-        _ if x.len() == 0 => {
-            Result::Ok("".to_string())
-        },
-        // the utf8 validation is O(n). We can avoid that if we know it is valid utf8
-        _ => {
-            String::from_utf8(x.to_vec())
-        }
-    };
-    let (i, string_content) = try_parse!(input,
-        alt!(
-            delimited!(
-                char!('\"'),
-                map_res!(
-                    is_not!("\""),
-                    converter
-                ),
-                char!('\"')
-            ) |
-            chain!(
-                char!('\"') ~
-                char!('\"'),
-
-                || {"".to_string()}
-            )
-        )
-
-    );
-    let nix_string = NixValue::String(string_content);
-    IResult::Done(i, nix_string)
-}*/
-
-
 /*********************** Strings *****************************/
-// There are two syntactic variants of strings:
-//  - Single line - denoted with double quotation marks e.g "this is a string"
-//  - Multi line - denoted with two single quotation marks e.g ''this is a string''
+/// There are two syntactic variants of strings:
+///  - Single line - denoted with double quotation marks e.g "this is a string"
+///  - Multi line - denoted with two single quotation marks e.g ''this is a string''
 named!(pub string<&[u8], NixValue>,
     alt!(
         empty_single_line_string
-    |   dbg!(inhabited_single_line_string)
+    |   inhabited_single_line_string
     )
 );
 
-/*named!(take_until_not_escaped_quotation_mark,
-    many1!(
-        switch!(peek!(take!(2)),
-            x@b"\\\"" => value!(x)
-        )
-    )
-)*/
+named!(empty_single_line_string<&[u8], NixValue>,
+    chain!(
+        char!('\"') ~
+        char!('\"'),
 
-// parses the inside of a string, taking escaped characters into consideration
-/*
-fn single_line_string_content(input: &[u8]) -> IResult<&[u8], String> {
-    let (i, str_content) = try_parse!(input,
-        map_res!(
-            many1!(
-                alt!(
-                    space |
-                    alphanumeric
-                )
-            ),
-            |res:Vec<&[u8]>| {String::from_utf8(res.concat())}
-        )
-    );
-    IResult::Done(i, str_content)
-}*/
+        || {NixValue::String("".to_string())}
+    )
+);
 
 fn inhabited_single_line_string(input: &[u8]) -> IResult<&[u8], NixValue> {
-    println!("inhabited_single_line_string: {:?}", input);
     let (i, str_content): (&[u8],String) = try_parse!(input,
         delimited!(
             char!('"'),
@@ -101,68 +49,40 @@ fn inhabited_single_line_string(input: &[u8]) -> IResult<&[u8], NixValue> {
     IResult::Done(i, nix_string)
 }
 
-fn allowed_char_in_string(input: &[u8]) -> IResult<&[u8], char> {
-    println!("allowed_char_in_string: {:?}", input);
-    let (i, str_content): (&[u8],char) = try_parse!(input,
-        map!(take!(1), |c:&[u8]| c[0] as char)
+fn inside_string(input: &[u8]) -> IResult<&[u8], String> {
+    let (i, str_content): (&[u8],&str) = try_parse!(input,
+        apply!(take_until_non_escaped_char,'\"')
     );
-    IResult::Done(i, str_content)
+    let string = str_content.to_string();
+    IResult::Done(i, string)
 }
 
-/*fn until_non_escaped_quotation(input:&[u8]) -> IResult<&[u8], String> {
-    let mut next_is_escaped = false;
-    let input_length = input.input_len();
-    // index in input where the result should stop
-    let mut res_stop_idx = 0;
-    let mut done = false;
-
-    for (idx, char) in input.iter_indices() {
-        if done {
-            break;
-        }
-        match char {
-            // if we see a backslash, the next character is going to be escaped
-            &b'\\' => next_is_escaped = true,
-            // a double quote and we know it is escaped
-            &b'\"' if next_is_escaped => next_is_escaped = false,
-            // a non-escaped quote means we are at the end of the string
-            &b'\"' => {
-                res_stop_idx = idx-1;
-                done = true;
-            },
-        }
-    }
-    let res_string = &input[0..res_stop_idx]
-    IResult::Done(&input[res_stop_idx+1..input_length], )
-}*/
-
-fn test(input: &[u8]) -> IResult<&[u8], &str> {
+/// read input up to the first occurence of the provided char that is not escaped
+fn take_until_non_escaped_char(input: &[u8], stop_char:char) -> IResult<&[u8], &str> {
     println!("test: {:?}", input);
+    // determines whether the next character is escaped
     let mut next_is_escaped = false;
 
-    let mut hej = |c:u8| {
-        let ch = c as char;
-        println!("inde i hej (c) {:?}", c);
-        println!("inde i hej (ch) {:?}", ch);
-        match ch {
+    let mut helper = |c:u8| {
+        match c as char {
+            // an escape character is found, so remember this
             '\\' => {
-                println!("setting escaped to true");
                 next_is_escaped = true;
-                // continue
+                // continue to the next char
                 true
             },
-            // quote that is escaped, so we can go on
-            '\"' if next_is_escaped => {
-                println!("saw escaped quotation, allowing");
-                println!("reseting escaped to false");
+
+            // stop char that is escaped, read more
+            x if x == stop_char && next_is_escaped => {
                 next_is_escaped = false;
                 true
             },
-            // quote that is not escaped, so do not move on
-            '\"' => false,
-            x => {
-                println!("allowing {:?}", x);
-                println!("reseting escaped to false");
+            // stop char that is not escaped, so stop reading
+            x if x == stop_char => false,
+
+            // any other char, keep reading
+            // we know that it is not escaped, so reset the escaped bool
+            _ => {
                 next_is_escaped = false;
                 true
             }
@@ -172,7 +92,7 @@ fn test(input: &[u8]) -> IResult<&[u8], &str> {
     let (i, str_content): (&[u8],&str) =  try_parse!(input,
         map_res!(
             take_while!(
-                hej
+                helper
             ),
             str::from_utf8
         )
@@ -181,82 +101,8 @@ fn test(input: &[u8]) -> IResult<&[u8], &str> {
     IResult::Done(i, str_content)
 }
 
-fn many_chars(input: &[u8]) -> IResult<&[u8], String> {
-    println!("many_chars: {:?}", input);
-    /*let (i, str_content): (&[u8],String) = try_parse!(input,
-        dbg!(map!(
-            many1!(
-                dbg!(allowed_char_in_string)
-            ),
-            |x:Vec<char>| x.into_iter().collect()
-        ))
-    );*/
-    let (i, str_content): (&[u8],&str) = try_parse!(input,
-        test
-    );
-    let string = str_content.to_string();
-    IResult::Done(i, string)
-}
-
-fn inside_string(input: &[u8]) -> IResult<&[u8], String> {
-    println!("inside_string: {:?}", input);
-    let (i, str_content): (&[u8],String) = try_parse!(input,
-        many_chars
-        /*map_res!(
-            escaped!(
-                many_chars,
-                '\\',
-                is_a_bytes!(b"\"n\\")
-            ),
-            |x:&[u8]| String::from_utf8(x.to_vec())
-        )*/
-
-    );
-    IResult::Done(i, str_content)
-}
-
-
-/*fn string_content(input: &[u8]) -> IResult<&[u8], &str>{
-    let mut next_is_escaped = false;
-    let input_length = input.input_len();
-
-    for (idx, char) in input.iter_indices() {
-        match char {
-            // if we see a backslash, the next character is going to be escaped
-            &b'\\' => next_is_escaped = true,
-            // a double quote and we know it is escaped
-            &b'\"' if next_is_escaped => next_is_escaped = false,
-            // a non-escaped quote means we are at the end of the string
-            &b'\"' => IResult::Done(&input[idx-1..], ),
-
-
-        }
-    }
-    IResult::Done(&input[input_length..], input)
-}*/
-
-named!(empty_single_line_string<&[u8], NixValue>,
-    chain!(
-        char!('\"') ~
-        char!('\"'),
-
-        || {NixValue::String("".to_string())}
-    )
-);
 /*************************************************************/
 
-fn space_or_alphanumeric(input:u8) -> bool {
-    true//is_space(input) || is_alphanumeric(input)
-}
-
-
-named!(pub esc<&[u8], &[u8]>,
-    escaped!(
-        take_while!(space_or_alphanumeric),
-        '\\',
-        is_a_bytes!(b"\"n\\")
-    )
-);
 
 #[cfg(test)]
 mod tests {
@@ -306,10 +152,10 @@ mod tests {
         func: string
      );
 
-/*    mk_parse_test!(
-        name: escaped_test,
-        input: b"abc d\"",
-        expected: b"abc d\"",
-        func: esc
-     );*/
+    mk_parse_test!(
+        name: nix_inhabited_escaped_quotation2_single_line_string,
+        input: b"\"x\\\"x\"",
+        expected: NixValue::String("x\\\"x".to_string()),
+        func: string
+     );
 }
