@@ -14,6 +14,7 @@ pub enum NixExpr {
 #[derive(Eq, PartialEq, Debug)]
 pub enum NixValue {
     String(String),
+    Null
 }
 
 /*********************** Strings *****************************/
@@ -103,6 +104,16 @@ fn take_until_non_escaped_char(input: &[u8], stop_char:char) -> IResult<&[u8], &
 
 /*************************************************************/
 
+
+/*********************** Null *******************************/
+named!(pub null<&[u8], NixValue>,
+    map!(
+        tag!("null"),
+        |_| NixValue::Null
+    )
+);
+/*************************************************************/
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,4 +170,11 @@ mod tests {
      );
 
     // TODO: multi-line strings
+
+    mk_parse_test!(
+        name: nix_null,
+        case: "../test_cases/null.nix",
+        expected: NixValue::Null,
+        func: null
+     );
 }
