@@ -57,7 +57,7 @@ named!(pub nix_func<&[u8], NixFunc>,
         expr:
             alt!(
                 nix_value
-            |   assert
+            |   nix_assert
             ) ~
         multispace?,
 
@@ -68,11 +68,11 @@ named!(pub nix_func<&[u8], NixFunc>,
 named!(pub nix_value<&[u8], NixFunc>,
     map!(
         alt!(
-            string
-        |   null
-        |   integer
-        |   boolean
-        |   path
+            nix_string
+        |   nix_null
+        |   nix_integer
+        |   nix_boolean
+        |   nix_path
         ),
         NixFunc::Value
     )
@@ -83,7 +83,7 @@ named!(pub nix_value<&[u8], NixFunc>,
 /// There are two syntactic variants of strings:
 ///  - Single line - denoted with double quotation marks e.g "this is a string"
 ///  - Multi line - denoted with two single quotation marks e.g ''this is a string''
-named!(pub string<&[u8], NixValue>,
+named!(pub nix_string<&[u8], NixValue>,
     alt!(
         empty_single_line_string
     |   inhabited_single_line_string
@@ -168,7 +168,7 @@ fn take_until_non_escaped_char(input: &[u8], stop_char: char) -> IResult<&[u8], 
 
 
 /*********************** Null *******************************/
-named!(pub null<&[u8], NixValue>,
+named!(pub nix_null<&[u8], NixValue>,
     map!(
         tag!("null"),
         |_| NixValue::Null
@@ -177,7 +177,7 @@ named!(pub null<&[u8], NixValue>,
 /*************************************************************/
 
 /*********************** Integers ****************************/
-named!(pub integer<&[u8], NixValue>,
+named!(pub nix_integer<&[u8], NixValue>,
     map_res!(
         digit,
         |digits:&[u8]| {
@@ -194,7 +194,7 @@ named!(pub integer<&[u8], NixValue>,
 /*************************************************************/
 
 /*********************** Booleans ****************************/
-named!(pub boolean<&[u8], NixValue>,
+named!(pub nix_boolean<&[u8], NixValue>,
     alt!(
         map!(tag!("false"), |_| NixValue::Boolean(false))
     |   map!(tag!("true"), |_| NixValue::Boolean(true))
@@ -235,7 +235,7 @@ named!(path_char<&[u8], char>,
 /// A nix path.
 /// Encodes this regex taking from https://github.com/NixOS/nix/blob/master/doc/manual/nix-lang-ref.xml :
 /// [a-zA-Z0-9\.\_\-\+]*(\/[a-zA-Z0-9\.\_\-\+]+)+
-named!(pub path<&[u8], NixValue>,
+named!(pub nix_path<&[u8], NixValue>,
     chain!(
         part1:
             map!(
@@ -275,7 +275,7 @@ named!(pub path<&[u8], NixValue>,
 /*************************************************************/
 
 /*********************** Assert ****************************/
-named!(pub assert<&[u8], NixFunc>,
+named!(pub nix_assert<&[u8], NixFunc>,
     chain!(
         tag!("assert") ~
         condition: nix_expr ~
@@ -293,7 +293,7 @@ named!(pub assert<&[u8], NixFunc>,
 /// A nix identifier
 /// Regex from https://github.com/NixOS/nix/blob/master/doc/manual/nix-lang-ref.xml :
 /// [a-zA-Z\_][a-zA-Z0-9\_\']*
-named!(pub identifier<&[u8], NixIdentifier>,
+named!(pub nix_identifier<&[u8], NixIdentifier>,
     chain!(
         part1:
             map!(
@@ -359,86 +359,86 @@ mod tests {
         name: nix_empty_single_line_string,
         case: "../test_cases/strings/single_line_empty.nix",
         expected: NixValue::String("".to_string()),
-        func: string
+        func: nix_string
      );
 
     mk_parse_test!(
         name: nix_inhabited_single_line_string_no_whitespace,
         case: "../test_cases/strings/single_line_no_whitespace.nix",
         expected: NixValue::String("z".to_string()),
-        func: string
+        func: nix_string
      );
 
     mk_parse_test!(
         name: nix_inhabited_single_line_string,
         case: "../test_cases/strings/single_line1.nix",
         expected: NixValue::String("i am a string with whitespace".to_string()),
-        func: string
+        func: nix_string
      );
 
     mk_parse_test!(
         name: nix_inhabited_escaped_quotation_single_line_string,
         case: "../test_cases/strings/single_line_escaped1.nix",
         expected: NixValue::String("x\\\"".to_string()),
-        func: string
+        func: nix_string
      );
 
     mk_parse_test!(
         name: nix_inhabited_escaped_quotation2_single_line_string,
         case: "../test_cases/strings/single_line_escaped2.nix",
         expected: NixValue::String("x\\\"x".to_string()),
-        func: string
+        func: nix_string
      );
 
     // TODO: multi-line strings
 
     mk_parse_test!(
-        name: nix_null,
+        name: nix_null1,
         case: "../test_cases/null.nix",
         expected: NixValue::Null,
-        func: null
+        func: nix_null
      );
 
     mk_parse_test!(
         name: nix_integer1,
         case: "../test_cases/integers/integer1.nix",
         expected: NixValue::Integer(123),
-        func: integer
+        func: nix_integer
      );
 
     mk_parse_test!(
         name: nix_boolean_true,
         case: "../test_cases/booleans/true.nix",
         expected: NixValue::Boolean(true),
-        func: boolean
+        func: nix_boolean
      );
 
     mk_parse_test!(
         name: nix_boolean_false,
         case: "../test_cases/booleans/false.nix",
         expected: NixValue::Boolean(false),
-        func: boolean
+        func: nix_boolean
      );
 
     mk_parse_test!(
         name: nix_path1,
         case: "../test_cases/paths/1.nix",
         expected: NixValue::Path("/bin".to_string()),
-        func: path
+        func: nix_path
      );
 
     mk_parse_test!(
         name: nix_path2,
         case: "../test_cases/paths/2.nix",
         expected: NixValue::Path("/bin/sh".to_string()),
-        func: path
+        func: nix_path
      );
 
     mk_parse_test!(
         name: nix_path3,
         case: "../test_cases/paths/3.nix",
         expected: NixValue::Path("./builder.sh".to_string()),
-        func: path
+        func: nix_path
      );
 
     mk_parse_test!(
@@ -449,14 +449,14 @@ mod tests {
                 Box::new(NixExpr::Func(NixFunc::Value(NixValue::Boolean(false)))),
                 Box::new(NixExpr::Func(NixFunc::Value(NixValue::Null))))
         },
-        func: assert
+        func: nix_assert
      );
 
     mk_parse_test!(
-        name: nix_identifier,
+        name: nix_identifier1,
         case: "../test_cases/identifiers/1_ignore_validate.nix",
         expected: NixIdentifier::Ident("x".to_string()),
-        func: identifier
+        func: nix_identifier
      );
 
     mk_parse_test!(
