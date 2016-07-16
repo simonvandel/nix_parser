@@ -9,7 +9,8 @@ use std::str;
 pub enum NixExpr {
     Function,
     Value(NixValue),
-    Assert(Box<NixExpr>, Box<NixExpr>)
+    Assert(Box<NixExpr>, Box<NixExpr>),
+    If(Box<NixExpr>, Box<NixExpr>, Box<NixExpr>)
 }
 
 
@@ -291,6 +292,27 @@ named!(pub identifier<&[u8], NixIdentifier>,
     )
 );
 /*************************************************************/
+
+/*********************** If **********************************/
+/// An if expression
+named!(pub nix_if<&[u8], NixExpr>,
+    chain!(
+        tag!("if") ~
+        condition:
+            nix_expr ~
+        tag!("then") ~
+        true_case:
+            nix_expr ~
+        tag!("else") ~
+        false_case:
+            nix_expr,
+
+        || {
+            NixExpr::If(Box::new(condition), Box::new(true_case), Box::new(false_case))
+        }
+    )
+);
+/*************************************************************/
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -413,5 +435,17 @@ mod tests {
         case: "../test_cases/identifiers/1.nix",
         expected: NixIdentifier::Ident("x".to_string()),
         func: identifier
+     );
+
+    mk_parse_test!(
+        name: nix_if1,
+        case: "../test_cases/if/1.nix",
+        expected:
+            NixExpr::If(
+                Box::new(NixExpr::Value(NixValue::Boolean(true))),
+                Box::new(NixExpr::Value(NixValue::Boolean(false))),
+                Box::new(NixExpr::Value(NixValue::Boolean(false))),
+        ),
+        func: nix_if
      );
 }
