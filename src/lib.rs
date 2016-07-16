@@ -41,7 +41,7 @@ named!(empty_single_line_string<&[u8], NixValue>,
 );
 
 fn inhabited_single_line_string(input: &[u8]) -> IResult<&[u8], NixValue> {
-    let (i, str_content): (&[u8],String) = try_parse!(input,
+    let (i, str_content): (&[u8], String) = try_parse!(input,
         delimited!(
             char!('"'),
             inside_string,
@@ -54,7 +54,7 @@ fn inhabited_single_line_string(input: &[u8]) -> IResult<&[u8], NixValue> {
 }
 
 fn inside_string(input: &[u8]) -> IResult<&[u8], String> {
-    let (i, str_content): (&[u8],&str) = try_parse!(input,
+    let (i, str_content): (&[u8], &str) = try_parse!(input,
         apply!(take_until_non_escaped_char,'\"')
     );
     let string = str_content.to_string();
@@ -62,12 +62,12 @@ fn inside_string(input: &[u8]) -> IResult<&[u8], String> {
 }
 
 /// read input up to the first occurence of the provided char that is not escaped
-fn take_until_non_escaped_char(input: &[u8], stop_char:char) -> IResult<&[u8], &str> {
+fn take_until_non_escaped_char(input: &[u8], stop_char: char) -> IResult<&[u8], &str> {
     println!("test: {:?}", input);
     // determines whether the next character is escaped
     let mut next_is_escaped = false;
 
-    let mut helper = |c:u8| {
+    let mut helper = |c: u8| {
         match c as char {
             // an escape character is found, so remember this
             '\\' => {
@@ -93,7 +93,7 @@ fn take_until_non_escaped_char(input: &[u8], stop_char:char) -> IResult<&[u8], &
         }
     };
 
-    let (i, str_content): (&[u8],&str) =  try_parse!(input,
+    let (i, str_content): (&[u8], &str) = try_parse!(input,
         map_res!(
             take_while!(
                 helper
@@ -145,7 +145,7 @@ named!(pub boolean<&[u8], NixValue>,
 
 /*********************** Paths *******************************/
 /// Parses 1 byte if the predicate returns true
-fn satisfy<F>(input: &[u8], predicate:F) -> IResult<&[u8], u8>
+fn satisfy<F>(input: &[u8], predicate: F) -> IResult<&[u8], u8>
     where F: Fn(u8) -> bool {
     let input_length = input.input_len();
     if input_length == 0 {
