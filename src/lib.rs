@@ -16,7 +16,8 @@ pub enum NixValue {
     String(String),
     Null,
     Integer(i64),
-    Boolean(bool)
+    Boolean(bool),
+    Path(String)
 }
 
 /*********************** Strings *****************************/
@@ -142,6 +143,78 @@ named!(pub boolean<&[u8], NixValue>,
 );
 /*************************************************************/
 
+/*********************** Paths *******************************/
+/// Parses 1 byte if the predicate returns true
+fn satisfy<F>(input: &[u8], predicate:F) -> IResult<&[u8], u8>
+    where F: Fn(u8) -> bool {
+    let input_length = input.input_len();
+    if input_length == 0 {
+        // TODO: use more sane error message instead of zero
+        return IResult::Error(Err::Code(ErrorKind::Custom(0)));
+    }
+
+    if predicate(input[0]) {
+        // consume the first byte
+        IResult::Done(&input[1..], input[0])
+    } else {
+        // consume nothing
+        // TODO: use more sane error message instead of zero
+        return IResult::Error(Err::Code(ErrorKind::Custom(0)));
+    }
+}
+
+named!(path_char<&[u8], char>,
+    alt!(
+        map!(apply!(satisfy, is_alphanumeric), |x:u8| x as char)
+    |   char!('.')
+    |   char!('_')
+    |   char!('-')
+    |   char!('+')
+    )
+);
+
+/// A nix path.
+/// Encodes this regex taking from https://github.com/NixOS/nix/blob/master/doc/manual/nix-lang-ref.xml :
+/// [a-zA-Z0-9\.\_\-\+]*(\/[a-zA-Z0-9\.\_\-\+]+)+
+named!(pub path<&[u8], NixValue>,
+    chain!(
+        part1:
+            map!(
+                many0!(path_char),
+                |x:Vec<char>| x.into_iter().collect::<String>()
+            ) ~
+        part2:
+            map!(
+                many1!(
+                    chain!(
+                        label1:
+                            map!(
+                                char!('/'),
+                                |c:char|  {
+                                    let res:String = c.to_string();
+                                    res
+                                }
+                            ) ~
+                        label2:
+                            map!(
+                                many1!(
+                                    path_char
+                                ),
+                                |x:Vec<char>| x.into_iter().collect::<String>()
+                            ),
+
+                        || {label1 + &label2}
+                    )
+                ),
+                |x:Vec<String>| x.into_iter().collect::<String>()
+            ),
+
+        || {NixValue::Path(part1 + &part2)
+        }
+    )
+);
+/*************************************************************/
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,5 +298,26 @@ mod tests {
         case: "../test_cases/booleans/false.nix",
         expected: NixValue::Boolean(false),
         func: boolean
+     );
+
+    mk_parse_test!(
+        name: nix_path1,
+        case: "../test_cases/paths/1.nix",
+        expected: NixValue::Path("/bin".to_string()),
+        func: path
+     );
+
+    mk_parse_test!(
+        name: nix_path2,
+        case: "../test_cases/paths/2.nix",
+        expected: NixValue::Path("/bin/sh".to_string()),
+        func: path
+     );
+
+    mk_parse_test!(
+        name: nix_path3,
+        case: "../test_cases/paths/3.nix",
+        expected: NixValue::Path("./builder.sh".to_string()),
+        func: path
      );
 }
