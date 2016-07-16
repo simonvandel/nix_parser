@@ -21,7 +21,9 @@ pub enum NixFunc {
     /// Named lambda
     /// Matches: '{' formals '}' '@' ID ':' expr_function
     // TODO: Lambda()
-    // TODO: With()
+    /// With
+    /// Matches: WITH expr ';' expr_function
+    With(Box<NixExpr>, Box<NixFunc>),
     // TODO: Let()
     Value(NixValue),
     /// Assert
@@ -335,6 +337,24 @@ named!(pub nix_if<&[u8], NixFunc>,
     )
 );
 /*************************************************************/
+
+/*********************** With **********************************/
+/// An if expression
+named!(pub nix_with<&[u8], NixFunc>,
+    chain!(
+        tag!("with") ~
+        expr:
+            nix_expr ~
+        tag!(";") ~
+        expr_func:
+            nix_func,
+
+        || {
+            NixFunc::With(Box::new(expr), Box::new(expr_func))
+        }
+    )
+);
+/*************************************************************/
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -469,5 +489,16 @@ mod tests {
                 Box::new(NixExpr::Func(NixFunc::Value(NixValue::Boolean(false)))),
         ),
         func: nix_if
+     );
+
+    mk_parse_test!(
+        name: nix_with1,
+        case: "../test_cases/with/1.nix",
+        expected:
+            NixFunc::With(
+                Box::new(NixExpr::Func(NixFunc::Value(NixValue::Boolean(false)))),
+                Box::new(NixFunc::Value(NixValue::Boolean(true))),
+        ),
+        func: nix_with
      );
 }
