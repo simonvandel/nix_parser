@@ -7,8 +7,25 @@ use std::str;
 
 #[derive(PartialEq, Debug)]
 pub enum NixExpr {
-    Function,
+    Func(NixFunc),
+}
+
+/// Structure inspired from https://github.com/NixOS/nix/blob/master/src/libexpr/parser.y
+#[derive(PartialEq, Debug)]
+pub enum NixFunc {
+    // Matches: ID ':' expr_function
+    Func(NixIdentifier, Box<NixFunc>),
+    /// Anonymous lambda
+    // Matches: '{' formals '}' ':' expr_function
+    // TODO: LambdaAnon()
+    /// Named lambda
+    /// Matches: '{' formals '}' '@' ID ':' expr_function
+    // TODO: Lambda()
+    // TODO: With()
+    // TODO: Let()
     Value(NixValue),
+    /// Assert
+    /// Matches: ASSERT expr ';' expr_function
     Assert(Box<NixExpr>, Box<NixExpr>),
     If(Box<NixExpr>, Box<NixExpr>, Box<NixExpr>)
 }
@@ -30,6 +47,11 @@ pub enum NixValue {
 
 /*********************** Expressions *****************************/
 named!(pub nix_expr<&[u8], NixExpr>,
+    map!(call!(nix_func), NixExpr::Func)
+);
+
+
+named!(pub nix_func<&[u8], NixFunc>,
     chain!(
         multispace? ~
         expr:
@@ -43,7 +65,7 @@ named!(pub nix_expr<&[u8], NixExpr>,
     )
 );
 
-named!(pub nix_value<&[u8], NixExpr>,
+named!(pub nix_value<&[u8], NixFunc>,
     map!(
         alt!(
             string
@@ -52,7 +74,7 @@ named!(pub nix_value<&[u8], NixExpr>,
         |   boolean
         |   path
         ),
-        NixExpr::Value
+        NixFunc::Value
     )
 );
 /*****************************************************************/
@@ -253,7 +275,7 @@ named!(pub path<&[u8], NixValue>,
 /*************************************************************/
 
 /*********************** Assert ****************************/
-named!(pub assert<&[u8], NixExpr>,
+named!(pub assert<&[u8], NixFunc>,
     chain!(
         tag!("assert") ~
         condition: nix_expr ~
@@ -261,7 +283,7 @@ named!(pub assert<&[u8], NixExpr>,
         result: nix_expr,
 
         || {
-            NixExpr::Assert(Box::new(condition), Box::new(result))
+            NixFunc::Assert(Box::new(condition), Box::new(result))
         }
     )
 );
@@ -295,7 +317,7 @@ named!(pub identifier<&[u8], NixIdentifier>,
 
 /*********************** If **********************************/
 /// An if expression
-named!(pub nix_if<&[u8], NixExpr>,
+named!(pub nix_if<&[u8], NixFunc>,
     chain!(
         tag!("if") ~
         condition:
@@ -308,7 +330,7 @@ named!(pub nix_if<&[u8], NixExpr>,
             nix_expr,
 
         || {
-            NixExpr::If(Box::new(condition), Box::new(true_case), Box::new(false_case))
+            NixFunc::If(Box::new(condition), Box::new(true_case), Box::new(false_case))
         }
     )
 );
@@ -423,9 +445,9 @@ mod tests {
         name: nix_assert1,
         case: "../test_cases/asserts/1.nix",
         expected: {
-            NixExpr::Assert(
-                Box::new(NixExpr::Value(NixValue::Boolean(false))),
-                Box::new(NixExpr::Value(NixValue::Null)))
+            NixFunc::Assert(
+                Box::new(NixExpr::Func(NixFunc::Value(NixValue::Boolean(false)))),
+                Box::new(NixExpr::Func(NixFunc::Value(NixValue::Null))))
         },
         func: assert
      );
@@ -441,10 +463,10 @@ mod tests {
         name: nix_if1,
         case: "../test_cases/if/1.nix",
         expected:
-            NixExpr::If(
-                Box::new(NixExpr::Value(NixValue::Boolean(true))),
-                Box::new(NixExpr::Value(NixValue::Boolean(false))),
-                Box::new(NixExpr::Value(NixValue::Boolean(false))),
+            NixFunc::If(
+                Box::new(NixExpr::Func(NixFunc::Value(NixValue::Boolean(true)))),
+                Box::new(NixExpr::Func(NixFunc::Value(NixValue::Boolean(false)))),
+                Box::new(NixExpr::Func(NixFunc::Value(NixValue::Boolean(false)))),
         ),
         func: nix_if
      );
