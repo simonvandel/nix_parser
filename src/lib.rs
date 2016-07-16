@@ -5,14 +5,20 @@ use nom::*;
 use std::str;
 
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(PartialEq, Debug)]
 pub enum NixExpr {
     Function,
     Value(NixValue),
     Assert(Box<NixExpr>, Box<NixExpr>)
 }
 
-#[derive(Eq, PartialEq, Debug)]
+
+#[derive(PartialEq, Debug)]
+pub enum NixIdentifier {
+    Ident(String)
+}
+
+#[derive(PartialEq, Debug)]
 pub enum NixValue {
     String(String),
     Null,
@@ -259,6 +265,32 @@ named!(pub assert<&[u8], NixExpr>,
     )
 );
 /*************************************************************/
+
+/*********************** Identifier **************************/
+/// A nix identifier
+/// Regex from https://github.com/NixOS/nix/blob/master/doc/manual/nix-lang-ref.xml :
+/// [a-zA-Z\_][a-zA-Z0-9\_\']*
+named!(pub identifier<&[u8], NixIdentifier>,
+    chain!(
+        part1:
+            map!(
+                apply!(satisfy, |c| is_alphabetic(c) || c == ('_' as u8) ),
+                |c:u8| (c as char).to_string()
+            )~
+        part2:
+            map_res!(
+                many0!(
+                    apply!(satisfy, |c| is_alphanumeric(c) || c == ('_' as u8) || c == ('\'' as u8))
+                ),
+                String::from_utf8
+            ),
+
+        || {
+            NixIdentifier::Ident(part1 + &part2)
+        }
+    )
+);
+/*************************************************************/
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,5 +406,12 @@ mod tests {
                 Box::new(NixExpr::Value(NixValue::Null)))
         },
         func: assert
+     );
+
+    mk_parse_test!(
+        name: nix_identifier,
+        case: "../test_cases/identifiers/1.nix",
+        expected: NixIdentifier::Ident("x".to_string()),
+        func: identifier
      );
 }
