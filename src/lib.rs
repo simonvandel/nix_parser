@@ -67,6 +67,7 @@ named!(pub nix_expr<&[u8], NixExpr>,
 );
 
 
+// TODO: consider if it is a good idea to expect whitespace here instead of further down in the tree
 named!(pub nix_func<&[u8], NixFunc>,
     chain!(
         multispace? ~
