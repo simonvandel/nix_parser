@@ -311,8 +311,8 @@ named!(pub nix_assert<&[u8], NixFunc>,
 
 /*********************** Identifier **************************/
 /// A nix identifier
-/// Regex from https://github.com/NixOS/nix/blob/master/doc/manual/nix-lang-ref.xml :
-/// [a-zA-Z\_][a-zA-Z0-9\_\']*
+/// Regex from https://github.com/NixOS/nix/blob/06068b353d7867d0e0299d4285e9b1a46195144c/src/libexpr/lexer.l :
+/// [a-zA-Z\_][a-zA-Z0-9\_\'\-]*
 named!(pub nix_identifier<&[u8], NixIdentifier>,
     chain!(
         part1:
@@ -323,7 +323,12 @@ named!(pub nix_identifier<&[u8], NixIdentifier>,
         part2:
             map_res!(
                 many0!(
-                    apply!(satisfy, |c| is_alphanumeric(c) || c == ('_' as u8) || c == ('\'' as u8))
+                    apply!(satisfy, |c|
+                        is_alphanumeric(c)
+                        || c == ('_' as u8)
+                        || c == ('\'' as u8)
+                        || c == ('-' as u8)
+                    )
                 ),
                 String::from_utf8
             ),
