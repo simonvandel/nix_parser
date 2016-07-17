@@ -374,8 +374,11 @@ named!(nix_binding<&[u8], NixBinding>,
     chain!(
         lhs:
             nix_attr_path ~
+        multispace? ~
         tag!("=") ~
+        multispace? ~
         rhs: nix_expr ~
+        multispace? ~
         tag!(";"),
 
         || {println!("nix_binding");NixBinding {lhs:lhs, rhs: rhs}}
@@ -633,6 +636,20 @@ mod tests {
     mk_parse_test!(
         name: nix_let2,
         case: "../test_cases/let/2.nix",
+        expected:
+            NixFunc::Let(
+                vec!(NixBinding{
+                        lhs: NixAttrPath::Simple(NixIdentifier::Ident("x".to_string())),
+                        rhs: NixExpr::Func(NixFunc::Value(NixValue::String(("".to_string()))))
+                    }),
+                Box::new(NixFunc::Value(NixValue::Integer(2))),
+        ),
+        func: nix_let
+     );
+
+    mk_parse_test!(
+        name: nix_let3,
+        case: "../test_cases/let/3.nix",
         expected:
             NixFunc::Let(
                 vec!(NixBinding{
