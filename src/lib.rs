@@ -24,7 +24,9 @@ pub enum NixFunc {
     /// With
     /// Matches: WITH expr ';' expr_function
     With(Box<NixExpr>, Box<NixFunc>),
-    // TODO: Let()
+    /// Let
+    /// Matches: LET binds IN expr_function
+    Let(Vec<NixBinding>, Box<NixFunc>),
     Value(NixValue),
     /// Assert
     /// Matches: ASSERT expr ';' expr_function
@@ -32,6 +34,17 @@ pub enum NixFunc {
     If(Box<NixExpr>, Box<NixExpr>, Box<NixExpr>)
 }
 
+#[derive(PartialEq, Debug)]
+pub struct NixBinding {
+    lhs:NixAttrPath,
+    rhs:NixExpr
+}
+
+#[derive(PartialEq, Debug)]
+pub enum NixAttrPath {
+    /// Just an identifier
+    Simple(NixIdentifier)
+}
 
 #[derive(PartialEq, Debug)]
 pub enum NixIdentifier {
@@ -44,7 +57,8 @@ pub enum NixValue {
     Null,
     Integer(i64),
     Boolean(bool),
-    Path(String)
+    Path(String),
+    Ident(NixIdentifier)
 }
 
 /*********************** Expressions *****************************/
@@ -57,7 +71,7 @@ named!(pub nix_func<&[u8], NixFunc>,
     chain!(
         multispace? ~
         expr:
-            alt!(
+            alt_complete!(
                 nix_value
             |   nix_assert
             |   nix_if
@@ -65,20 +79,22 @@ named!(pub nix_func<&[u8], NixFunc>,
             ) ~
         multispace?,
 
-        || expr
+        || {println!("nix_func"); expr}
     )
 );
 
+// TODO: should this be expr_simple?
 named!(pub nix_value<&[u8], NixFunc>,
     map!(
-        alt!(
+        alt_complete!(
             nix_string
         |   nix_null
         |   nix_integer
         |   nix_boolean
         |   nix_path
+        |   map!(nix_identifier, NixValue::Ident)
         ),
-        NixFunc::Value
+        |val| {println!("nix_value");NixFunc::Value(val)}
     )
 );
 /*****************************************************************/
@@ -88,7 +104,7 @@ named!(pub nix_value<&[u8], NixFunc>,
 ///  - Single line - denoted with double quotation marks e.g "this is a string"
 ///  - Multi line - denoted with two single quotation marks e.g ''this is a string''
 named!(pub nix_string<&[u8], NixValue>,
-    alt!(
+    alt_complete!(
         empty_single_line_string
     |   inhabited_single_line_string
     )
@@ -99,7 +115,7 @@ named!(empty_single_line_string<&[u8], NixValue>,
         char!('\"') ~
         char!('\"'),
 
-        || {NixValue::String("".to_string())}
+        || {println!("empty_single_line_string");NixValue::String("".to_string())}
     )
 );
 
@@ -199,7 +215,7 @@ named!(pub nix_integer<&[u8], NixValue>,
 
 /*********************** Booleans ****************************/
 named!(pub nix_boolean<&[u8], NixValue>,
-    alt!(
+    alt_complete!(
         map!(tag!("false"), |_| NixValue::Boolean(false))
     |   map!(tag!("true"), |_| NixValue::Boolean(true))
     )
@@ -227,7 +243,7 @@ fn satisfy<F>(input: &[u8], predicate: F) -> IResult<&[u8], u8>
 }
 
 named!(path_char<&[u8], char>,
-    alt!(
+    alt_complete!(
         map!(apply!(satisfy, is_alphanumeric), |x:u8| x as char)
     |   char!('.')
     |   char!('_')
@@ -339,9 +355,55 @@ named!(pub nix_if<&[u8], NixFunc>,
     )
 );
 /*************************************************************/
+// TODO: not all cases are covered
+named!(nix_attr_path<&[u8], NixAttrPath>,
+    alt_complete!(
+        map!(nix_identifier, NixAttrPath::Simple)
+    )
+);
+
+// TODO: binds with inherit
+named!(nix_binding<&[u8], NixBinding>,
+    chain!(
+        lhs:
+            nix_attr_path ~
+        tag!("=") ~
+        rhs: nix_expr ~
+        tag!(";"),
+
+        || {println!("nix_binding");NixBinding {lhs:lhs, rhs: rhs}}
+    )
+);
+/*********************** Let **********************************/
+/// A let expression
+named!(pub nix_let<&[u8], NixFunc>,
+    chain!(
+        tag!("let") ~
+        bindings:
+            many0!(
+                chain!(
+                    multispace? ~
+                    binding: nix_binding ~
+                    multispace?,
+                    || binding
+                )
+            ) ~
+        tag!("in") ~
+        // There should always be space after 'in'
+        multispace ~
+        expr:
+            nix_func,
+
+        || {
+            println!("nix_let");
+            NixFunc::Let(bindings, Box::new(expr))
+        }
+    )
+);
+/*************************************************************/
 
 /*********************** With **********************************/
-/// An if expression
+/// A with expression
 named!(pub nix_with<&[u8], NixFunc>,
     chain!(
         tag!("with") ~
@@ -502,5 +564,33 @@ mod tests {
                 Box::new(NixFunc::Value(NixValue::Boolean(true))),
         ),
         func: nix_with
+     );
+
+    mk_parse_test!(
+        name: nix_let1,
+        case: "../test_cases/let/1.nix",
+        expected:
+            NixFunc::Let(
+                vec!(NixBinding{
+                        lhs: NixAttrPath::Simple(NixIdentifier::Ident("x".to_string())),
+                        rhs: NixExpr::Func(NixFunc::Value(NixValue::String(("".to_string()))))
+                    }),
+                Box::new(NixFunc::Value(NixValue::Ident(NixIdentifier::Ident("x".to_string())))),
+        ),
+        func: nix_let
+     );
+
+    mk_parse_test!(
+        name: nix_let2,
+        case: "../test_cases/let/2.nix",
+        expected:
+            NixFunc::Let(
+                vec!(NixBinding{
+                        lhs: NixAttrPath::Simple(NixIdentifier::Ident("x".to_string())),
+                        rhs: NixExpr::Func(NixFunc::Value(NixValue::String(("".to_string()))))
+                    }),
+                Box::new(NixFunc::Value(NixValue::Integer(2))),
+        ),
+        func: nix_let
      );
 }
