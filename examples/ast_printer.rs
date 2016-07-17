@@ -27,7 +27,7 @@ fn main() {
     let input_file_path = matches.value_of("INPUT").map(Path::new).unwrap();
     let mut input_file_content = Vec::new();
 
-    File::open(&input_file_path)
+    let _ = File::open(&input_file_path)
         .and_then(|mut file| file.read_to_end(&mut input_file_content))
         .map(|_|println!("{:?}", nix_expr(input_file_content.as_slice())));
 }
