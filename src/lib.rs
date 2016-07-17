@@ -5,13 +5,13 @@ use nom::*;
 use std::str;
 
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum NixExpr {
     Func(NixFunc),
 }
 
 /// Structure inspired from https://github.com/NixOS/nix/blob/master/src/libexpr/parser.y
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum NixFunc {
     // Matches: ID ':' expr_function
     NamedFunc(NixIdentifier, Box<NixFunc>),
@@ -34,18 +34,35 @@ pub enum NixFunc {
     If(Box<NixExpr>, Box<NixExpr>, Box<NixExpr>)
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct NixBinding {
     lhs:NixAttrPath,
     rhs:NixExpr
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum NixAttrPath {
     /// Just an identifier
-    Simple(NixIdentifier),
+    Simple(NixAttrElem),
     /// Identifiers separated by dots
-    Path(Vec<NixIdentifier>)
+    Path(Vec<NixAttrElem>)
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum NixAttrElem {
+    /// Matches attr
+    Attr(NixIdentifier),
+    StringAttr(NixStringAttr)
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum NixStringAttr {
+    // attribute access wrapped in string
+    // e.g. x."y z"
+    String(String),
+    // attribute that has an expression.
+    // e.g. x.${2+2}
+    Expr(NixExpr)
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -53,7 +70,7 @@ pub enum NixIdentifier {
     Ident(String)
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum NixValue {
     String(String),
     Null,
@@ -108,6 +125,12 @@ named!(pub nix_value<&[u8], NixValue>,
 ///  - Single line - denoted with double quotation marks e.g "this is a string"
 ///  - Multi line - denoted with two single quotation marks e.g ''this is a string''
 named!(pub nix_string<&[u8], NixValue>,
+    alt_complete!(
+        nix_single_line_string
+    )
+);
+
+named!(nix_single_line_string<&[u8], NixValue>,
     alt_complete!(
         empty_single_line_string
     |   inhabited_single_line_string
@@ -374,7 +397,24 @@ named!(nix_attr<&[u8], NixIdentifier>,
     )
 );
 
-// TODO: not all cases are covered
+named!(nix_string_attr<&[u8], NixStringAttr>,
+    alt_complete!(
+        map_res!(nix_single_line_string, |val| {
+            match val {
+                NixValue::String(str) => Ok(NixStringAttr::String(str)),
+                _ => Err("This should really not happen. Only a String should be possible")
+            }
+        })
+    |   chain!(
+            tag!("${") ~
+            expr: nix_expr ~
+            tag!("}"),
+
+            || NixStringAttr::Expr(expr)
+        )
+    )
+);
+
 named!(nix_attr_path<&[u8], NixAttrPath>,
     map!(
         separated_nonempty_list!(
@@ -384,10 +424,12 @@ named!(nix_attr_path<&[u8], NixAttrPath>,
                 multispace?,
                 || {}
             ),
-            // TODO: use alt for nix_attr and nix_string_attr
-            nix_attr
+            alt_complete!(
+                map!(nix_attr, NixAttrElem::Attr)
+            |   map!(nix_string_attr, NixAttrElem::StringAttr)
+            )
         ),
-        |path:Vec<NixIdentifier>| {
+        |path:Vec<NixAttrElem>| {
             // If the path contains only 1 element, we can make it into a simple path
             if path.len() == 1 {
                 NixAttrPath::Simple(path[0].clone())
@@ -654,7 +696,7 @@ mod tests {
         expected:
             NixFunc::Let(
                 vec!(NixBinding{
-                        lhs: NixAttrPath::Simple(NixIdentifier::Ident("x".to_string())),
+                        lhs: NixAttrPath::Simple(NixAttrElem::Attr(NixIdentifier::Ident("x".to_string()))),
                         rhs: NixExpr::Func(NixFunc::Value(NixValue::String(("".to_string()))))
                     }),
                 Box::new(NixFunc::Value(NixValue::Ident(NixIdentifier::Ident("x".to_string())))),
@@ -668,7 +710,7 @@ mod tests {
         expected:
             NixFunc::Let(
                 vec!(NixBinding{
-                        lhs: NixAttrPath::Simple(NixIdentifier::Ident("x".to_string())),
+                        lhs: NixAttrPath::Simple(NixAttrElem::Attr(NixIdentifier::Ident("x".to_string()))),
                         rhs: NixExpr::Func(NixFunc::Value(NixValue::String(("".to_string()))))
                     }),
                 Box::new(NixFunc::Value(NixValue::Integer(2))),
@@ -682,7 +724,7 @@ mod tests {
         expected:
             NixFunc::Let(
                 vec!(NixBinding{
-                        lhs: NixAttrPath::Simple(NixIdentifier::Ident("x".to_string())),
+                        lhs: NixAttrPath::Simple(NixAttrElem::Attr(NixIdentifier::Ident("x".to_string()))),
                         rhs: NixExpr::Func(NixFunc::Value(NixValue::String(("".to_string()))))
                     }),
                 Box::new(NixFunc::Value(NixValue::Integer(2))),
@@ -698,8 +740,8 @@ mod tests {
                 vec!(NixBinding{
                         lhs: NixAttrPath::Path(
                             vec!(
-                                NixIdentifier::Ident("x".to_string()),
-                                NixIdentifier::Ident("y".to_string())
+                                NixAttrElem::Attr(NixIdentifier::Ident("x".to_string())),
+                                NixAttrElem::Attr(NixIdentifier::Ident("y".to_string()))
                             )
                         ),
                         rhs: NixExpr::Func(NixFunc::Value(NixValue::String(("".to_string()))))
@@ -717,8 +759,27 @@ mod tests {
                 vec!(NixBinding{
                         lhs: NixAttrPath::Path(
                             vec!(
-                                NixIdentifier::Ident("x".to_string()),
-                                NixIdentifier::Ident("y".to_string())
+                                NixAttrElem::Attr(NixIdentifier::Ident("x".to_string())),
+                                NixAttrElem::Attr(NixIdentifier::Ident("y".to_string()))
+                            )
+                        ),
+                        rhs: NixExpr::Func(NixFunc::Value(NixValue::String(("".to_string()))))
+                    }),
+                Box::new(NixFunc::Value(NixValue::Integer(2))),
+        ),
+        func: nix_let
+     );
+
+    mk_parse_test!(
+        name: nix_let6,
+        case: "../test_cases/let/6.nix",
+        expected:
+            NixFunc::Let(
+                vec!(NixBinding{
+                        lhs: NixAttrPath::Path(
+                            vec!(
+                                NixAttrElem::Attr(NixIdentifier::Ident("x".to_string())),
+                                NixAttrElem::StringAttr(NixStringAttr::String("y z".to_string()))
                             )
                         ),
                         rhs: NixExpr::Func(NixFunc::Value(NixValue::String(("".to_string()))))
