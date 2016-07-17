@@ -17,7 +17,7 @@ pub enum NixFunc {
     NamedFunc(NixIdentifier, Box<NixFunc>),
     /// Anonymous lambda
     // Matches: '{' formals '}' ':' expr_function
-    // TODO: LambdaAnon()
+    AnonLambda(Vec<NixFormal>, Box<NixFunc>),
     /// Named lambda
     /// Matches: '{' formals '}' '@' ID ':' expr_function
     // TODO: Lambda()
@@ -32,6 +32,13 @@ pub enum NixFunc {
     /// Matches: ASSERT expr ';' expr_function
     Assert(Box<NixExpr>, Box<NixExpr>),
     If(Box<NixExpr>, Box<NixExpr>, Box<NixExpr>)
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum NixFormal {
+    Ellipsis,
+    Identifier(NixIdentifier),
+    IdentifierWithDefault(NixIdentifier, NixExpr)
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -95,6 +102,7 @@ named!(pub nix_func<&[u8], NixFunc>,
             // Note: the order is important. It should at best follow the reference grammar
             alt_complete!(
                 nix_named_func
+            |   nix_anon_lambda
             |   nix_assert
             |   nix_with
             |   nix_let
@@ -397,6 +405,67 @@ named!(pub nix_if<&[u8], NixFunc>,
     )
 );
 /*************************************************************/
+
+named!(nix_formals<&[u8], Vec<NixFormal> >,
+    chain!(
+        mut formals1:
+            separated_nonempty_list!(
+                chain!(
+                    multispace? ~
+                    tag!(",") ~
+                    multispace?,
+                    || {}
+                ),
+                nix_formal
+            ) ~
+        // match potential end comma and ellipsis
+        multispace? ~
+        tag!(",")? ~
+        multispace? ~
+        ellipsis:
+            tag!("...")? ,
+
+        || {
+            if ellipsis.is_some() {
+                formals1.push(NixFormal::Ellipsis)
+            }
+            formals1
+
+        }
+    )
+);
+
+named!(nix_formal<&[u8], NixFormal>,
+    alt_complete!(
+        map!(nix_identifier, NixFormal::Identifier)
+    |   chain!(
+            id:
+                nix_identifier ~
+            tag!("?") ~
+            expr: nix_expr,
+
+            || NixFormal::IdentifierWithDefault(id, expr)
+        )
+    )
+);
+
+named!(pub nix_anon_lambda<&[u8], NixFunc>,
+    chain!(
+        tag!("{") ~
+        multispace? ~
+        formals:
+            nix_formals ~
+        multispace? ~
+        tag!("}") ~
+        tag!(":") ~
+        expr_func:
+            nix_func,
+
+        || NixFunc::AnonLambda(formals, Box::new(expr_func))
+    )
+);
+
+
 // TODO:  we do not match OR_KW (yet) (see https://github.com/NixOS/nix/issues/975)
 named!(nix_attr<&[u8], NixIdentifier>,
     alt_complete!(
@@ -844,5 +913,75 @@ mod tests {
                 )
             ),
         func: nix_list
+     );
+
+    mk_parse_test!(
+        name: nix_anon_lambda1,
+        case: "../test_cases/anon_lambda/1.nix",
+        expected:
+            NixFunc::AnonLambda(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string()))
+                ),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_anon_lambda
+     );
+
+    mk_parse_test!(
+        name: nix_anon_lambda2,
+        case: "../test_cases/anon_lambda/2.nix",
+        expected:
+            NixFunc::AnonLambda(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
+                     NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
+                ),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_anon_lambda
+     );
+
+    mk_parse_test!(
+        name: nix_anon_lambda3,
+        case: "../test_cases/anon_lambda/3.nix",
+        expected:
+            NixFunc::AnonLambda(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
+                     NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
+                ),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_anon_lambda
+     );
+
+    mk_parse_test!(
+        name: nix_anon_lambda4,
+        case: "../test_cases/anon_lambda/4.nix",
+        expected:
+            NixFunc::AnonLambda(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
+                     NixFormal::Identifier(NixIdentifier::Ident("name2".to_string())),
+                     NixFormal::Ellipsis
+                ),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_anon_lambda
+     );
+
+    mk_parse_test!(
+        name: nix_anon_lambda5,
+        case: "../test_cases/anon_lambda/5.nix",
+        expected:
+            NixFunc::AnonLambda(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
+                     NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
+                ),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_anon_lambda
      );
 }
