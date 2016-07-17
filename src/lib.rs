@@ -14,7 +14,7 @@ pub enum NixExpr {
 #[derive(PartialEq, Debug)]
 pub enum NixFunc {
     // Matches: ID ':' expr_function
-    Func(NixIdentifier, Box<NixFunc>),
+    NamedFunc(NixIdentifier, Box<NixFunc>),
     /// Anonymous lambda
     // Matches: '{' formals '}' ':' expr_function
     // TODO: LambdaAnon()
@@ -424,6 +424,24 @@ named!(pub nix_with<&[u8], NixFunc>,
     )
 );
 /*************************************************************/
+
+/*********************** NamedFunc **********************************/
+/// A named function
+named!(pub nix_named_func<&[u8], NixFunc>,
+    chain!(
+        name:
+            nix_identifier ~
+        multispace? ~
+        tag!(":") ~
+        expr_func:
+            nix_func,
+
+        || {
+            NixFunc::NamedFunc(name, Box::new(expr_func))
+        }
+    )
+);
+/*************************************************************/
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -597,5 +615,27 @@ mod tests {
                 Box::new(NixFunc::Value(NixValue::Integer(2))),
         ),
         func: nix_let
+     );
+
+    mk_parse_test!(
+        name: nix_func1,
+        case: "../test_cases/func/1.nix",
+        expected:
+            NixFunc::NamedFunc(
+                NixIdentifier::Ident("x".to_string())
+                ,Box::new(NixFunc::Value(NixValue::Integer(2))),
+        ),
+        func: nix_named_func
+     );
+
+    mk_parse_test!(
+        name: nix_func2,
+        case: "../test_cases/func/2.nix",
+        expected:
+            NixFunc::NamedFunc(
+                NixIdentifier::Ident("x".to_string())
+                ,Box::new(NixFunc::Value(NixValue::Integer(2))),
+        ),
+        func: nix_named_func
      );
 }
