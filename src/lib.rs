@@ -378,7 +378,12 @@ named!(nix_attr<&[u8], NixIdentifier>,
 named!(nix_attr_path<&[u8], NixAttrPath>,
     map!(
         separated_nonempty_list!(
-            tag!("."),
+            chain!(
+                multispace? ~
+                tag!(".") ~
+                multispace?,
+                || {}
+            ),
             // TODO: use alt for nix_attr and nix_string_attr
             nix_attr
         ),
@@ -688,6 +693,25 @@ mod tests {
     mk_parse_test!(
         name: nix_let4,
         case: "../test_cases/let/4.nix",
+        expected:
+            NixFunc::Let(
+                vec!(NixBinding{
+                        lhs: NixAttrPath::Path(
+                            vec!(
+                                NixIdentifier::Ident("x".to_string()),
+                                NixIdentifier::Ident("y".to_string())
+                            )
+                        ),
+                        rhs: NixExpr::Func(NixFunc::Value(NixValue::String(("".to_string()))))
+                    }),
+                Box::new(NixFunc::Value(NixValue::Integer(2))),
+        ),
+        func: nix_let
+     );
+
+    mk_parse_test!(
+        name: nix_let5,
+        case: "../test_cases/let/5.nix",
         expected:
             NixFunc::Let(
                 vec!(NixBinding{
