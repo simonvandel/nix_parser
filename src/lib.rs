@@ -43,10 +43,12 @@ pub struct NixBinding {
 #[derive(PartialEq, Debug)]
 pub enum NixAttrPath {
     /// Just an identifier
-    Simple(NixIdentifier)
+    Simple(NixIdentifier),
+    /// Identifiers separated by dots
+    Path(Vec<NixIdentifier>)
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum NixIdentifier {
     Ident(String)
 }
@@ -336,7 +338,10 @@ named!(pub nix_identifier<&[u8], NixIdentifier>,
             ),
 
         || {
-            NixIdentifier::Ident(part1 + &part2)
+            let res = NixIdentifier::Ident(part1 + &part2);
+            println!("nix_identifier found: {:?}", res);
+            res
+
         }
     )
 );
@@ -362,10 +367,29 @@ named!(pub nix_if<&[u8], NixFunc>,
     )
 );
 /*************************************************************/
+// TODO:  we do not match OR_KW (yet) (see https://github.com/NixOS/nix/issues/975)
+named!(nix_attr<&[u8], NixIdentifier>,
+    alt_complete!(
+        nix_identifier
+    )
+);
+
 // TODO: not all cases are covered
 named!(nix_attr_path<&[u8], NixAttrPath>,
-    alt_complete!(
-        map!(nix_identifier, NixAttrPath::Simple)
+    map!(
+        separated_nonempty_list!(
+            tag!("."),
+            // TODO: use alt for nix_attr and nix_string_attr
+            nix_attr
+        ),
+        |path:Vec<NixIdentifier>| {
+            // If the path contains only 1 element, we can make it into a simple path
+            if path.len() == 1 {
+                NixAttrPath::Simple(path[0].clone())
+            } else {
+                NixAttrPath::Path(path)
+            }
+        }
     )
 );
 
@@ -654,6 +678,25 @@ mod tests {
             NixFunc::Let(
                 vec!(NixBinding{
                         lhs: NixAttrPath::Simple(NixIdentifier::Ident("x".to_string())),
+                        rhs: NixExpr::Func(NixFunc::Value(NixValue::String(("".to_string()))))
+                    }),
+                Box::new(NixFunc::Value(NixValue::Integer(2))),
+        ),
+        func: nix_let
+     );
+
+    mk_parse_test!(
+        name: nix_let4,
+        case: "../test_cases/let/4.nix",
+        expected:
+            NixFunc::Let(
+                vec!(NixBinding{
+                        lhs: NixAttrPath::Path(
+                            vec!(
+                                NixIdentifier::Ident("x".to_string()),
+                                NixIdentifier::Ident("y".to_string())
+                            )
+                        ),
                         rhs: NixExpr::Func(NixFunc::Value(NixValue::String(("".to_string()))))
                     }),
                 Box::new(NixFunc::Value(NixValue::Integer(2))),
