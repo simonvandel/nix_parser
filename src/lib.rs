@@ -372,32 +372,22 @@ named!(pub nix_identifier<&[u8], NixIdentifier>,
 );
 /*************************************************************/
 
-/// consumes a keyword. A keyword has whitespace after it,
-/// but is not guaranteed to have it before it, as it could be the start of the file.
-fn keyword<'a>(input: &'a [u8], word: &str) -> IResult<&'a [u8], ()>{
-    let (i,_) = try_parse!(input,
-        chain!(
-            multispace? ~
-            tag!(word) ~
-            multispace,
-            || {}
-        )
-
-    );
-    IResult::Done(i, ())
-}
-
 /*********************** If **********************************/
 /// An if expression
 named!(pub nix_if<&[u8], NixFunc>,
     chain!(
-        apply!(keyword, "if") ~
+        tag!("if") ~
+        multispace ~
         condition:
             nix_expr ~
-        apply!(keyword, "then") ~
+        multispace ~
+        tag!("then") ~
+        multispace ~
         true_case:
             nix_expr ~
-        apply!(keyword, "else") ~
+        multispace ~
+        tag!("else") ~
+        multispace ~
         false_case:
             nix_expr,
 
