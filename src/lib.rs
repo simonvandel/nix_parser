@@ -92,11 +92,14 @@ named!(pub nix_func<&[u8], NixFunc>,
     chain!(
         multispace? ~
         expr:
+            // Note: the order is important. It should at best follow the reference grammar
             alt_complete!(
-                map!(nix_value, NixFunc::Value)
+                nix_named_func
             |   nix_assert
-            |   nix_if
             |   nix_with
+            |   nix_let
+            |   nix_if
+            |   map!(nix_value, NixFunc::Value)
             ) ~
         multispace?,
 
