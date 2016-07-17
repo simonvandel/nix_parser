@@ -58,7 +58,8 @@ pub enum NixValue {
     Integer(i64),
     Boolean(bool),
     Path(String),
-    Ident(NixIdentifier)
+    Ident(NixIdentifier),
+    List(Vec<NixValue>)
 }
 
 /*********************** Expressions *****************************/
@@ -73,7 +74,7 @@ named!(pub nix_func<&[u8], NixFunc>,
         multispace? ~
         expr:
             alt_complete!(
-                nix_value
+                map!(nix_value, NixFunc::Value)
             |   nix_assert
             |   nix_if
             |   nix_with
@@ -85,7 +86,7 @@ named!(pub nix_func<&[u8], NixFunc>,
 );
 
 // TODO: should this be expr_simple?
-named!(pub nix_value<&[u8], NixFunc>,
+named!(pub nix_value<&[u8], NixValue>,
     map!(
         alt_complete!(
             nix_string
@@ -95,7 +96,7 @@ named!(pub nix_value<&[u8], NixFunc>,
         |   nix_path
         |   map!(nix_identifier, NixValue::Ident)
         ),
-        |val| {println!("nix_value");NixFunc::Value(val)}
+        |val| {println!("nix_value");val}
     )
 );
 /*****************************************************************/
@@ -443,6 +444,31 @@ named!(pub nix_named_func<&[u8], NixFunc>,
     )
 );
 /*************************************************************/
+
+/*********************** List **********************************/
+/// A list
+named!(pub nix_list<&[u8], NixValue>,
+    chain!(
+        tag!("[") ~
+        content: many0!(
+            chain!(
+                // each element is separated by whitespace
+                multispace? ~
+                value: nix_value ~
+                multispace?,
+
+                || value
+            )
+
+        ) ~
+        tag!("]"),
+
+        || {
+            NixValue::List(content)
+        }
+    )
+);
+/*************************************************************/
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -638,5 +664,31 @@ mod tests {
                 ,Box::new(NixFunc::Value(NixValue::Integer(2))),
         ),
         func: nix_named_func
+     );
+
+    mk_parse_test!(
+        name: nix_list1,
+        case: "../test_cases/list/1.nix",
+        expected:
+            NixValue::List(
+                vec!(
+                     NixValue::Integer(1)
+                    ,NixValue::Integer(2)
+                    ,NixValue::Integer(3)
+                )
+            ),
+        func: nix_list
+     );
+
+    mk_parse_test!(
+        name: nix_list2,
+        case: "../test_cases/list/2.nix",
+        expected:
+            NixValue::List(
+                vec!(
+                     NixValue::Integer(1)
+                )
+            ),
+        func: nix_list
      );
 }
