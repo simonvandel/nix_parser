@@ -562,7 +562,9 @@ mod tests {
             fn $testName () {
                 let res = $test_fn(include_bytes!($test_case));
                 match res {
-                    IResult::Done(_, output) => assert_eq!($expected, output),
+                    IResult::Done(x, ref output) if x.is_empty() => assert_eq!($expected, *output),
+                    IResult::Done(not_consumed, _) =>
+                        panic!("Reached Done, but did not consume the whole input file. Not consumed: {:?}", not_consumed),
                     IResult::Incomplete(rest) => panic!("Incomplete with rest: {:?}", rest),
                     IResult::Error(err) => panic!("Incomplete with rest: {:?}", err)
                 }
