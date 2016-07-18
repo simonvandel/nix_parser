@@ -98,6 +98,7 @@ named!(pub nix_expr<&[u8], NixExpr>,
 named!(pub nix_func<&[u8], NixFunc>,
     chain!(
         multispace? ~
+        nix_comment? ~
         expr:
             // Note: the order is important. It should at best follow the reference grammar
             alt_complete!(
@@ -130,6 +131,24 @@ named!(pub nix_value<&[u8], NixValue>,
     )
 );
 /*****************************************************************/
+
+named!(pub nix_comment<&[u8], ()>,
+    alt_complete!(
+        nix_single_line_comment
+    )
+);
+
+named!(pub nix_single_line_comment<&[u8], ()>,
+    chain!(
+        char!('#') ~
+        // match until a line ending is met
+        not_line_ending ~
+        // then consume the line ending
+        line_ending,
+
+        || {}
+    )
+);
 
 /*********************** Strings *****************************/
 /// There are two syntactic variants of strings:
@@ -1105,5 +1124,12 @@ mod tests {
         case: "../test_cases/lambda/6_should_fail_ignore_validate.nix",
         should_fail,
         func: nix_lambda
+     );
+
+    mk_parse_test!(
+        name: nix_comment1,
+        case: "../test_cases/comments/1.nix",
+        expected: NixExpr::Func(NixFunc::Value(NixValue::Boolean(true))),
+        func: nix_expr
      );
 }
