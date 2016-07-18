@@ -665,6 +665,19 @@ mod tests {
                     IResult::Error(err) => panic!("Incomplete with rest: {:?}", err)
                 }
             }
+        };
+        ( name: $testName:ident, case: $test_case:expr, should_fail, func: $test_fn:expr ) => {
+            #[test]
+            #[should_panic]
+            fn $testName () {
+                let res = $test_fn(include_bytes!($test_case));
+                match res {
+                    // parsing was successful, which it should not be. Return without panicking
+                    IResult::Done(_, _) => return,
+                    IResult::Incomplete(rest) => panic!("Incomplete with rest: {:?}", rest),
+                    IResult::Error(err) => panic!("Incomplete with rest: {:?}", err)
+                }
+            }
         }
     }
 
@@ -1084,6 +1097,13 @@ mod tests {
                 NixIdentifier::Ident("func1".to_string()),
                 Box::new(NixFunc::Value(NixValue::Boolean(true)))
             ),
+        func: nix_lambda
+     );
+
+    mk_parse_test!(
+        name: nix_lambda6,
+        case: "../test_cases/lambda/6_should_fail_ignore_validate.nix",
+        should_fail,
         func: nix_lambda
      );
 }
