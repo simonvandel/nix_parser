@@ -20,7 +20,7 @@ pub enum NixFunc {
     AnonLambda(Vec<NixFormal>, Box<NixFunc>),
     /// Named lambda
     /// Matches: '{' formals '}' '@' ID ':' expr_function
-    // TODO: Lambda()
+    Lambda(Vec<NixFormal>, NixIdentifier, Box<NixFunc>),
     /// With
     /// Matches: WITH expr ';' expr_function
     With(Box<NixExpr>, Box<NixFunc>),
@@ -103,6 +103,7 @@ named!(pub nix_func<&[u8], NixFunc>,
             alt_complete!(
                 nix_named_func
             |   nix_anon_lambda
+            |   nix_lambda
             |   nix_assert
             |   nix_with
             |   nix_let
@@ -449,6 +450,30 @@ named!(nix_formal<&[u8], NixFormal>,
     )
 );
 
+named!(pub nix_lambda<&[u8], NixFunc>,
+    chain!(
+        tag!("{") ~
+        multispace? ~
+        formals:
+            nix_formals ~
+        multispace? ~
+        tag!("}") ~
+        multispace? ~
+        tag!("@") ~
+        multispace? ~
+        id:
+            nix_identifier ~
+        // This space is mandatory to distinguish IDs from URIs
+        multispace ~
+        tag!(":") ~
+        multispace? ~
+        expr_func:
+            nix_func,
+
+        || NixFunc::Lambda(formals, id, Box::new(expr_func))
+    )
+);
+
 named!(pub nix_anon_lambda<&[u8], NixFunc>,
     chain!(
         tag!("{") ~
@@ -457,7 +482,9 @@ named!(pub nix_anon_lambda<&[u8], NixFunc>,
             nix_formals ~
         multispace? ~
         tag!("}") ~
+        multispace? ~
         tag!(":") ~
+        multispace? ~
         expr_func:
             nix_func,
 
@@ -983,5 +1010,80 @@ mod tests {
                 Box::new(NixFunc::Value(NixValue::Boolean(true)))
             ),
         func: nix_anon_lambda
+     );
+
+    mk_parse_test!(
+        name: nix_lambda1,
+        case: "../test_cases/lambda/1.nix",
+        expected:
+            NixFunc::Lambda(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string()))
+                ),
+                NixIdentifier::Ident("func1".to_string()),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_lambda
+     );
+
+    mk_parse_test!(
+        name: nix_lambda2,
+        case: "../test_cases/lambda/2.nix",
+        expected:
+            NixFunc::Lambda(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
+                     NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
+                ),
+                NixIdentifier::Ident("func1".to_string()),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_lambda
+     );
+
+    mk_parse_test!(
+        name: nix_lambda3,
+        case: "../test_cases/lambda/3.nix",
+        expected:
+            NixFunc::Lambda(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
+                     NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
+                ),
+                NixIdentifier::Ident("func1".to_string()),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_lambda
+     );
+
+    mk_parse_test!(
+        name: nix_lambda4,
+        case: "../test_cases/lambda/4.nix",
+        expected:
+            NixFunc::Lambda(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
+                     NixFormal::Identifier(NixIdentifier::Ident("name2".to_string())),
+                     NixFormal::Ellipsis
+                ),
+                NixIdentifier::Ident("func1".to_string()),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_lambda
+     );
+
+    mk_parse_test!(
+        name: nix_lambda5,
+        case: "../test_cases/lambda/5.nix",
+        expected:
+            NixFunc::Lambda(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
+                     NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
+                ),
+                NixIdentifier::Ident("func1".to_string()),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_lambda
      );
 }
