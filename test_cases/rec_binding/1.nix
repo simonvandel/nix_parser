@@ -1,0 +1,3 @@
+rec {
+    name = "hej";
+}

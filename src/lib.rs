@@ -92,7 +92,8 @@ pub enum NixValue {
     Boolean(bool),
     Path(String),
     Ident(NixIdentifier),
-    List(Vec<NixValue>)
+    List(Vec<NixValue>),
+    RecBinding(Vec<NixBinding>)
 }
 
 /*********************** Expressions *****************************/
@@ -153,6 +154,7 @@ named!(pub nix_value<&[u8], NixValue>,
         |   nix_boolean
         |   nix_path
         |   map!(nix_identifier, NixValue::Ident)
+        |   nix_rec_binding
         ),
         |val| {println!("nix_value");val}
     )
@@ -176,6 +178,20 @@ named!(pub nix_single_line_comment<&[u8], ()>,
         || {}
     )
 );
+
+named!(pub nix_rec_binding<&[u8], NixValue>,
+    chain!(
+        tag!("rec") ~
+        multispace? ~
+        tag!("{") ~
+        bindings:
+            nix_bindings ~
+        tag!("}"),
+
+        || NixValue::RecBinding(bindings)
+    )
+);
+
 
 /*********************** Strings *****************************/
 /// There are two syntactic variants of strings:
@@ -627,20 +643,25 @@ named!(nix_binding<&[u8], NixBinding>,
         || {println!("nix_binding");NixBinding {lhs:lhs, rhs: rhs}}
     )
 );
+
+named!(nix_bindings<&[u8], Vec<NixBinding> >,
+    many0!(
+        chain!(
+            multispace? ~
+            binding: nix_binding ~
+            multispace?,
+            || binding
+        )
+    )
+);
+
 /*********************** Let **********************************/
 /// A let expression
 named!(pub nix_let<&[u8], NixFunc>,
     chain!(
         tag!("let") ~
         bindings:
-            many0!(
-                chain!(
-                    multispace? ~
-                    binding: nix_binding ~
-                    multispace?,
-                    || binding
-                )
-            ) ~
+            nix_bindings ~
         tag!("in") ~
         // There should always be space after 'in'
         multispace ~
@@ -974,6 +995,23 @@ mod tests {
                 Box::new(NixFunc::Value(NixValue::Integer(2))),
         ),
         func: nix_let
+     );
+
+    mk_parse_test!(
+        name: nix_rec_binding1,
+        case: "../test_cases/rec_binding/1.nix",
+        expected:
+            NixValue::RecBinding(
+                vec!(
+                    NixBinding{
+                        lhs: NixAttrPath::Simple(
+                                NixAttrElem::Attr(NixIdentifier::Ident("name".to_string()))
+                            ),
+                        rhs: NixExpr::Func(NixFunc::Value(NixValue::String(("hej".to_string()))))
+                    }
+                )
+        ),
+        func: nix_rec_binding
      );
 
     mk_parse_test!(
