@@ -148,13 +148,15 @@ named!(pub nix_expr_select<&[u8], NixFunc>,
 named!(pub nix_value<&[u8], NixValue>,
     map!(
         alt_complete!(
-            nix_string
-        |   nix_null
-        |   nix_integer
+        // all parsers just matching on keywords are to be parsed first
+            nix_null
         |   nix_boolean
+        |   nix_integer
+        |   nix_string
         |   nix_path
+        |    nix_rec_binding
+        // identifier is the last option so it does not interfere with keyword parsers like null and boolean
         |   map!(nix_identifier, NixValue::Ident)
-        |   nix_rec_binding
         ),
         |val| {println!("nix_value");val}
     )
