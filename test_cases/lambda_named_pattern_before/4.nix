@@ -1,0 +1,1 @@
+func1@{ name1, name2, ... } :true

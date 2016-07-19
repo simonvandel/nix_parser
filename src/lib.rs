@@ -18,9 +18,12 @@ pub enum NixFunc {
     /// Anonymous lambda
     // Matches: '{' formals '}' ':' expr_function
     AnonLambda(Vec<NixFormal>, Box<NixFunc>),
-    /// Named lambda
+    /// Named lambda with the pattern named after the formals
     /// Matches: '{' formals '}' '@' ID ':' expr_function
-    Lambda(Vec<NixFormal>, NixIdentifier, Box<NixFunc>),
+    LambdaNamedAfter(Vec<NixFormal>, NixIdentifier, Box<NixFunc>),
+    /// Named lambda with the pattern named before the formals
+    /// Matches: '{' formals '}' '@' ID ':' expr_function
+    LambdaNamedBefore(Vec<NixFormal>, NixIdentifier, Box<NixFunc>),
     /// With
     /// Matches: WITH expr ';' expr_function
     With(Box<NixExpr>, Box<NixFunc>),
@@ -104,7 +107,8 @@ named!(pub nix_func<&[u8], NixFunc>,
             alt_complete!(
                 nix_named_func
             |   nix_anon_lambda
-            |   nix_lambda
+            |   nix_lambda_named_pattern_after
+            |   nix_lambda_named_pattern_before
             |   nix_assert
             |   nix_with
             |   nix_let
@@ -469,7 +473,7 @@ named!(nix_formal<&[u8], NixFormal>,
     )
 );
 
-named!(pub nix_lambda<&[u8], NixFunc>,
+named!(pub nix_lambda_named_pattern_after<&[u8], NixFunc>,
     chain!(
         tag!("{") ~
         multispace? ~
@@ -489,7 +493,30 @@ named!(pub nix_lambda<&[u8], NixFunc>,
         expr_func:
             nix_func,
 
-        || NixFunc::Lambda(formals, id, Box::new(expr_func))
+        || NixFunc::LambdaNamedAfter(formals, id, Box::new(expr_func))
+    )
+);
+
+named!(pub nix_lambda_named_pattern_before<&[u8], NixFunc>,
+    chain!(
+        id:
+            nix_identifier ~
+        multispace? ~
+        tag!("@") ~
+        multispace? ~
+        tag!("{") ~
+        multispace? ~
+        formals:
+            nix_formals ~
+        multispace? ~
+        tag!("}") ~
+        multispace? ~
+        tag!(":") ~
+        multispace? ~
+        expr_func:
+            nix_func,
+
+        || NixFunc::LambdaNamedBefore(formals, id, Box::new(expr_func))
     )
 );
 
@@ -1045,24 +1072,24 @@ mod tests {
      );
 
     mk_parse_test!(
-        name: nix_lambda1,
-        case: "../test_cases/lambda/1.nix",
+        name: nix_lambda_named_pattern_after1,
+        case: "../test_cases/lambda_named_pattern_after/1.nix",
         expected:
-            NixFunc::Lambda(
+            NixFunc::LambdaNamedAfter(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string()))
                 ),
                 NixIdentifier::Ident("func1".to_string()),
                 Box::new(NixFunc::Value(NixValue::Boolean(true)))
             ),
-        func: nix_lambda
+        func: nix_lambda_named_pattern_after
      );
 
     mk_parse_test!(
-        name: nix_lambda2,
-        case: "../test_cases/lambda/2.nix",
+        name: nix_lambda_named_pattern_after2,
+        case: "../test_cases/lambda_named_pattern_after/2.nix",
         expected:
-            NixFunc::Lambda(
+            NixFunc::LambdaNamedAfter(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
@@ -1070,14 +1097,14 @@ mod tests {
                 NixIdentifier::Ident("func1".to_string()),
                 Box::new(NixFunc::Value(NixValue::Boolean(true)))
             ),
-        func: nix_lambda
+        func: nix_lambda_named_pattern_after
      );
 
     mk_parse_test!(
-        name: nix_lambda3,
-        case: "../test_cases/lambda/3.nix",
+        name: nix_lambda_named_pattern_after3,
+        case: "../test_cases/lambda_named_pattern_after/3.nix",
         expected:
-            NixFunc::Lambda(
+            NixFunc::LambdaNamedAfter(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
@@ -1085,14 +1112,14 @@ mod tests {
                 NixIdentifier::Ident("func1".to_string()),
                 Box::new(NixFunc::Value(NixValue::Boolean(true)))
             ),
-        func: nix_lambda
+        func: nix_lambda_named_pattern_after
      );
 
     mk_parse_test!(
-        name: nix_lambda4,
-        case: "../test_cases/lambda/4.nix",
+        name: nix_lambda_named_pattern_after4,
+        case: "../test_cases/lambda_named_pattern_after/4.nix",
         expected:
-            NixFunc::Lambda(
+            NixFunc::LambdaNamedAfter(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string())),
@@ -1101,14 +1128,14 @@ mod tests {
                 NixIdentifier::Ident("func1".to_string()),
                 Box::new(NixFunc::Value(NixValue::Boolean(true)))
             ),
-        func: nix_lambda
+        func: nix_lambda_named_pattern_after
      );
 
     mk_parse_test!(
-        name: nix_lambda5,
-        case: "../test_cases/lambda/5.nix",
+        name: nix_lambda_named_pattern_after5,
+        case: "../test_cases/lambda_named_pattern_after/5.nix",
         expected:
-            NixFunc::Lambda(
+            NixFunc::LambdaNamedAfter(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
@@ -1116,14 +1143,89 @@ mod tests {
                 NixIdentifier::Ident("func1".to_string()),
                 Box::new(NixFunc::Value(NixValue::Boolean(true)))
             ),
-        func: nix_lambda
+        func: nix_lambda_named_pattern_after
      );
 
     mk_parse_test!(
-        name: nix_lambda6,
-        case: "../test_cases/lambda/6_should_fail_ignore_validate.nix",
+        name: nix_lambda_named_pattern_after6,
+        case: "../test_cases/lambda_named_pattern_after/6_should_fail_ignore_validate.nix",
         should_fail,
-        func: nix_lambda
+        func: nix_lambda_named_pattern_after
+     );
+
+    mk_parse_test!(
+        name: nix_lambda_named_pattern_before1,
+        case: "../test_cases/lambda_named_pattern_before/1.nix",
+        expected:
+            NixFunc::LambdaNamedBefore(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string()))
+                ),
+                NixIdentifier::Ident("func1".to_string()),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_lambda_named_pattern_before
+     );
+
+    mk_parse_test!(
+        name: nix_lambda_named_pattern_before2,
+        case: "../test_cases/lambda_named_pattern_before/2.nix",
+        expected:
+            NixFunc::LambdaNamedBefore(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
+                     NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
+                ),
+                NixIdentifier::Ident("func1".to_string()),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_lambda_named_pattern_before
+     );
+
+    mk_parse_test!(
+        name: nix_lambda_named_pattern_before3,
+        case: "../test_cases/lambda_named_pattern_before/3.nix",
+        expected:
+            NixFunc::LambdaNamedBefore(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
+                     NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
+                ),
+                NixIdentifier::Ident("func1".to_string()),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_lambda_named_pattern_before
+     );
+
+    mk_parse_test!(
+        name: nix_lambda_named_pattern_before4,
+        case: "../test_cases/lambda_named_pattern_before/4.nix",
+        expected:
+            NixFunc::LambdaNamedBefore(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
+                     NixFormal::Identifier(NixIdentifier::Ident("name2".to_string())),
+                     NixFormal::Ellipsis
+                ),
+                NixIdentifier::Ident("func1".to_string()),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_lambda_named_pattern_before
+     );
+
+    mk_parse_test!(
+        name: nix_lambda_named_pattern_before5,
+        case: "../test_cases/lambda_named_pattern_before/5.nix",
+        expected:
+            NixFunc::LambdaNamedBefore(
+                vec!(
+                     NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
+                     NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
+                ),
+                NixIdentifier::Ident("func1".to_string()),
+                Box::new(NixFunc::Value(NixValue::Boolean(true)))
+            ),
+        func: nix_lambda_named_pattern_before
      );
 
     mk_parse_test!(
