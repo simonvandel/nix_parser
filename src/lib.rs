@@ -34,7 +34,11 @@ pub enum NixFunc {
     /// Assert
     /// Matches: ASSERT expr ';' expr_function
     Assert(Box<NixExpr>, Box<NixExpr>),
-    If(Box<NixExpr>, Box<NixExpr>, Box<NixExpr>)
+    If(Box<NixExpr>, Box<NixExpr>, Box<NixExpr>),
+    // TODO: I have not included ExprSelect variant with or keyword
+    /// Expression selection like 'stdevn.mkDerivation'
+    /// Matches expr_simple '.' attrpath
+    ExprSelect(NixValue, Box<NixAttrPath>)
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -113,10 +117,29 @@ named!(pub nix_func<&[u8], NixFunc>,
             |   nix_with
             |   nix_let
             |   nix_if
+            |   nix_expr_select
             |   map!(nix_value, NixFunc::Value)
             ),
 
         || {println!("nix_func"); expr}
+    )
+);
+
+// TODO: missing case with or keyword
+named!(pub nix_expr_select<&[u8], NixFunc>,
+    alt_complete!(
+        chain!(
+            lhs:
+                nix_value ~
+            multispace? ~
+            tag!(".") ~
+            multispace? ~
+            rhs:
+                nix_attr_path,
+
+            || NixFunc::ExprSelect(lhs, Box::new(rhs))
+        )
+    |   map!(nix_value, NixFunc::Value)
     )
 );
 
@@ -1233,5 +1256,18 @@ mod tests {
         case: "../test_cases/comments/1.nix",
         expected: NixExpr::Func(NixFunc::Value(NixValue::Boolean(true))),
         func: nix_expr
+     );
+
+    mk_parse_test!(
+        name: nix_expr_select1,
+        case: "../test_cases/expr_select/1_ignore_validate.nix",
+        expected: NixFunc::ExprSelect(
+            NixValue::Ident(NixIdentifier::Ident("stdenv".to_string())),
+            Box::new(NixAttrPath::Simple(
+                                NixAttrElem::Attr(NixIdentifier::Ident("mkDerivation".to_string()))
+                            )
+                        )
+            ),
+        func: nix_expr_select
      );
 }
