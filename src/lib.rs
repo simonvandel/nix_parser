@@ -101,7 +101,8 @@ pub enum NixValue {
     Path(String),
     Ident(NixIdentifier),
     List(Vec<NixValue>),
-    RecBinding(Vec<NixBinding>)
+    RecBinding(Vec<NixBinding>),
+    CurlyBinds(Vec<NixBinding>)
 }
 
 /*********************** Expressions *****************************/
@@ -186,6 +187,7 @@ named!(pub nix_value<&[u8], NixValue>,
         |   nix_string
         |   nix_path
         |   nix_rec_binding
+        |   nix_curly_binding
         // identifier is the last option so it does not interfere with keyword parsers like null and boolean
         |   map!(call!(trace, "nix_value: ident", nix_identifier), NixValue::Ident)
         ),
@@ -212,6 +214,17 @@ named!(pub nix_single_line_comment<&[u8], ()>,
         line_ending,
 
         || {}
+    )
+);
+
+named!(pub nix_curly_binding<&[u8], NixValue>,
+    chain!(
+        tag!("{") ~
+        bindings:
+            nix_bindings ~
+        tag!("}"),
+
+        || NixValue::CurlyBinds(bindings)
     )
 );
 
@@ -278,7 +291,6 @@ fn inside_string(input: &[u8]) -> IResult<&[u8], String> {
 
 /// read input up to the first occurrence of the provided char that is not escaped
 fn take_until_non_escaped_char(input: &[u8], stop_char: char) -> IResult<&[u8], &str> {
-    println!("test: {:?}", input);
     // determines whether the next character is escaped
     let mut next_is_escaped = false;
 
@@ -1075,6 +1087,23 @@ mod tests {
                 )
         ),
         func: nix_rec_binding
+     );
+
+    mk_parse_test!(
+        name: nix_curly_binding1,
+        case: "../test_cases/curly_binding/1.nix",
+        expected:
+            NixValue::CurlyBinds(
+                vec!(
+                    NixBinding{
+                        lhs: NixAttrPath::Simple(
+                                NixAttrElem::Attr(NixIdentifier::Ident("name".to_string()))
+                            ),
+                        rhs: NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::String(("hej".to_string()))))))
+                    }
+                )
+        ),
+        func: nix_curly_binding
      );
 
     mk_parse_test!(
