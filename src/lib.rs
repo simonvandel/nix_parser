@@ -1155,6 +1155,18 @@ mod tests {
      );
 
     mk_parse_test!(
+        name: nix_list3,
+        case: "../test_cases/list/3_ignore_validate.nix",
+        expected:
+            NixValue::List(
+                vec!(
+                     NixValue::Ident(NixIdentifier::Ident("stdenv".to_string()))
+                )
+            ),
+        func: nix_list
+     );
+
+    mk_parse_test!(
         name: nix_anon_lambda1,
         case: "../test_cases/anon_lambda/1.nix",
         expected:
