@@ -6,6 +6,7 @@ repository = "https://github.com/simonvandel/nix_parser"
 
 [dependencies]
 nom = "^1.2.3"
+itertools = "0.4.16"
 
 [dev-dependencies]
 clap = "2"

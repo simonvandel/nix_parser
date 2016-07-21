@@ -53,8 +53,8 @@ pub enum NixFormal {
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct NixBinding {
-    lhs:NixAttrPath,
-    rhs:NixExpr
+    pub lhs:NixAttrPath,
+    pub rhs:NixExpr
 }
 
 #[derive(PartialEq, Debug, Clone)]
