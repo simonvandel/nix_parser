@@ -9,34 +9,28 @@ use std::fmt::*;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum NixExpr {
-    Func(NixFunc),
-}
-
-/// Structure inspired from https://github.com/NixOS/nix/blob/master/src/libexpr/parser.y
-#[derive(PartialEq, Debug, Clone)]
-pub enum NixFunc {
+    If(Box<NixExpr>, Box<NixExpr>, Box<NixExpr>),
     // Matches: ID ':' expr_function
-    NamedFunc(NixIdentifier, Box<NixFunc>),
+    NamedFunc(NixIdentifier, Box<NixExpr>),
     /// Anonymous lambda
     // Matches: '{' formals '}' ':' expr_function
-    AnonLambda(Vec<NixFormal>, Box<NixFunc>),
+    AnonLambda(Vec<NixFormal>, Box<NixExpr>),
     /// Named lambda with the pattern named after the formals
     /// Matches: '{' formals '}' '@' ID ':' expr_function
-    LambdaNamedAfter(Vec<NixFormal>, NixIdentifier, Box<NixFunc>),
+    LambdaNamedAfter(Vec<NixFormal>, NixIdentifier, Box<NixExpr>),
     /// Named lambda with the pattern named before the formals
     /// Matches: '{' formals '}' '@' ID ':' expr_function
-    LambdaNamedBefore(Vec<NixFormal>, NixIdentifier, Box<NixFunc>),
+    LambdaNamedBefore(Vec<NixFormal>, NixIdentifier, Box<NixExpr>),
     /// With
     /// Matches: WITH expr ';' expr_function
-    With(Box<NixExpr>, Box<NixFunc>),
+    With(Box<NixExpr>, Box<NixExpr>),
     /// Let
     /// Matches: LET binds IN expr_function
-    Let(Vec<NixBinding>, Box<NixFunc>),
+    Let(Vec<NixBinding>, Box<NixExpr>),
     Value(NixValue),
     /// Assert
     /// Matches: ASSERT expr ';' expr_function
     Assert(Box<NixExpr>, Box<NixExpr>),
-    If(Box<NixExpr>, Box<NixExpr>, Box<NixExpr>),
     /// Some application of values
     /// For example in builtins.getEnv "CONFIG_FILE", the components are "builtins
     Application(Vec<NixExprSelect>)
@@ -107,13 +101,8 @@ pub enum NixValue {
 }
 
 /*********************** Expressions *****************************/
-named!(pub nix_expr<&[u8], NixExpr>,
-    map!(call!(nix_func), NixExpr::Func)
-);
-
-
 // TODO: consider if it is a good idea to expect whitespace here instead of further down in the tree
-named!(pub nix_func<&[u8], NixFunc>,
+named!(pub nix_expr<&[u8], NixExpr>,
     chain!(
         multispace? ~
         nix_comment? ~
@@ -130,7 +119,7 @@ named!(pub nix_func<&[u8], NixFunc>,
             |   nix_if
                 // nix_expr_op needs to be right after nix_if, to have the same grammar semantics as the reference grammar
             |   nix_expr_op
-            |   map!(nix_value, NixFunc::Value)
+            |   map!(nix_value, NixExpr::Value)
             ),
 
         || {println!("nix_func"); expr}
@@ -149,13 +138,13 @@ fn trace<'a, O, F>(input: &'a[u8], msg:&str, parser: F) -> IResult<&'a[u8], O>
 
 
 // TODO: all operators
-named!(pub nix_expr_op<&[u8], NixFunc>,
+named!(pub nix_expr_op<&[u8], NixExpr>,
     map!(
         separated_nonempty_list!(
             multispace,
             call!(trace, "nix_expr_op: expr in chain", nix_expr_select)
         ),
-        NixFunc::Application
+        NixExpr::Application
     )
 );
 
@@ -445,7 +434,7 @@ named!(pub nix_path<&[u8], NixValue>,
 /*************************************************************/
 
 /*********************** Assert ****************************/
-named!(pub nix_assert<&[u8], NixFunc>,
+named!(pub nix_assert<&[u8], NixExpr>,
     chain!(
         tag!("assert") ~
         condition: nix_expr ~
@@ -453,7 +442,7 @@ named!(pub nix_assert<&[u8], NixFunc>,
         result: nix_expr,
 
         || {
-            NixFunc::Assert(Box::new(condition), Box::new(result))
+            NixExpr::Assert(Box::new(condition), Box::new(result))
         }
     )
 );
@@ -522,7 +511,7 @@ named!(pub nix_identifier<&[u8], NixIdentifier>,
 
 /*********************** If **********************************/
 /// An if expression
-named!(pub nix_if<&[u8], NixFunc>,
+named!(pub nix_if<&[u8], NixExpr>,
     chain!(
         tag!("if") ~
         multispace ~
@@ -540,7 +529,7 @@ named!(pub nix_if<&[u8], NixFunc>,
             nix_expr,
 
         || {
-            NixFunc::If(Box::new(condition), Box::new(true_case), Box::new(false_case))
+            NixExpr::If(Box::new(condition), Box::new(true_case), Box::new(false_case))
         }
     )
 );
@@ -589,7 +578,7 @@ named!(nix_formal<&[u8], NixFormal>,
     )
 );
 
-named!(pub nix_lambda_named_pattern_after<&[u8], NixFunc>,
+named!(pub nix_lambda_named_pattern_after<&[u8], NixExpr>,
     chain!(
         tag!("{") ~
         multispace? ~
@@ -606,14 +595,14 @@ named!(pub nix_lambda_named_pattern_after<&[u8], NixFunc>,
         multispace ~
         tag!(":") ~
         multispace? ~
-        expr_func:
-            nix_func,
+        expr:
+            nix_expr,
 
-        || NixFunc::LambdaNamedAfter(formals, id, Box::new(expr_func))
+        || NixExpr::LambdaNamedAfter(formals, id, Box::new(expr))
     )
 );
 
-named!(pub nix_lambda_named_pattern_before<&[u8], NixFunc>,
+named!(pub nix_lambda_named_pattern_before<&[u8], NixExpr>,
     chain!(
         id:
             nix_identifier ~
@@ -629,14 +618,14 @@ named!(pub nix_lambda_named_pattern_before<&[u8], NixFunc>,
         multispace? ~
         tag!(":") ~
         multispace? ~
-        expr_func:
-            nix_func,
+        expr:
+            nix_expr,
 
-        || NixFunc::LambdaNamedBefore(formals, id, Box::new(expr_func))
+        || NixExpr::LambdaNamedBefore(formals, id, Box::new(expr))
     )
 );
 
-named!(pub nix_anon_lambda<&[u8], NixFunc>,
+named!(pub nix_anon_lambda<&[u8], NixExpr>,
     chain!(
         tag!("{") ~
         multispace? ~
@@ -647,10 +636,10 @@ named!(pub nix_anon_lambda<&[u8], NixFunc>,
         multispace? ~
         tag!(":") ~
         multispace? ~
-        expr_func:
-            nix_func,
+        expr:
+            nix_expr,
 
-        || NixFunc::AnonLambda(formals, Box::new(expr_func))
+        || NixExpr::AnonLambda(formals, Box::new(expr))
     )
 );
 
@@ -734,7 +723,7 @@ named!(nix_bindings<&[u8], Vec<NixBinding> >,
 
 /*********************** Let **********************************/
 /// A let expression
-named!(pub nix_let<&[u8], NixFunc>,
+named!(pub nix_let<&[u8], NixExpr>,
     chain!(
         tag!("let") ~
         bindings:
@@ -743,11 +732,11 @@ named!(pub nix_let<&[u8], NixFunc>,
         // There should always be space after 'in'
         multispace ~
         expr:
-            nix_func,
+            nix_expr,
 
         || {
             println!("nix_let");
-            NixFunc::Let(bindings, Box::new(expr))
+            NixExpr::Let(bindings, Box::new(expr))
         }
     )
 );
@@ -755,17 +744,17 @@ named!(pub nix_let<&[u8], NixFunc>,
 
 /*********************** With **********************************/
 /// A with expression
-named!(pub nix_with<&[u8], NixFunc>,
+named!(pub nix_with<&[u8], NixExpr>,
     chain!(
         tag!("with") ~
-        expr:
+        lhs_expr:
             nix_expr ~
         tag!(";") ~
-        expr_func:
-            nix_func,
+        rhs_expr:
+            nix_expr,
 
         || {
-            NixFunc::With(Box::new(expr), Box::new(expr_func))
+            NixExpr::With(Box::new(lhs_expr), Box::new(rhs_expr))
         }
     )
 );
@@ -773,17 +762,17 @@ named!(pub nix_with<&[u8], NixFunc>,
 
 /*********************** NamedFunc **********************************/
 /// A named function
-named!(pub nix_named_func<&[u8], NixFunc>,
+named!(pub nix_named_func<&[u8], NixExpr>,
     chain!(
         name:
             nix_identifier ~
         multispace? ~
         tag!(":") ~
-        expr_func:
-            nix_func,
+        expr:
+            nix_expr,
 
         || {
-            NixFunc::NamedFunc(name, Box::new(expr_func))
+            NixExpr::NamedFunc(name, Box::new(expr))
         }
     )
 );
@@ -937,9 +926,9 @@ mod tests {
         name: nix_assert1,
         case: "../test_cases/asserts/1.nix",
         expected: {
-            NixFunc::Assert(
-                Box::new(NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(false)))))),
-                Box::new(NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Null))))))
+            NixExpr::Assert(
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(false))))),
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Null)))))
         },
         func: nix_assert
      );
@@ -955,10 +944,10 @@ mod tests {
         name: nix_if1,
         case: "../test_cases/if/1.nix",
         expected:
-            NixFunc::If(
-                Box::new(NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))),
-                Box::new(NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(false)))))),
-                Box::new(NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(false)))))),
+            NixExpr::If(
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true))))),
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(false))))),
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(false))))),
         ),
         func: nix_if
      );
@@ -967,9 +956,9 @@ mod tests {
         name: nix_with1,
         case: "../test_cases/with/1.nix",
         expected:
-            NixFunc::With(
-                Box::new(NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(false)))))),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true))))),
+            NixExpr::With(
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(false))))),
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true))))),
         ),
         func: nix_with
      );
@@ -978,12 +967,12 @@ mod tests {
         name: nix_let1,
         case: "../test_cases/let/1.nix",
         expected:
-            NixFunc::Let(
+            NixExpr::Let(
                 vec!(NixBinding{
                         lhs: NixAttrPath::Simple(NixAttrElem::Attr(NixIdentifier::Ident("x".to_string()))),
-                        rhs: NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::String(("".to_string()))))))
+                        rhs: NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::String(("".to_string())))))
                     }),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Ident(NixIdentifier::Ident("x".to_string())))))),
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Ident(NixIdentifier::Ident("x".to_string())))))),
         ),
         func: nix_let
      );
@@ -992,12 +981,12 @@ mod tests {
         name: nix_let2,
         case: "../test_cases/let/2.nix",
         expected:
-            NixFunc::Let(
+            NixExpr::Let(
                 vec!(NixBinding{
                         lhs: NixAttrPath::Simple(NixAttrElem::Attr(NixIdentifier::Ident("x".to_string()))),
-                        rhs: NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::String(("".to_string()))))))
+                        rhs: NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::String(("".to_string())))))
                     }),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
         ),
         func: nix_let
      );
@@ -1006,12 +995,12 @@ mod tests {
         name: nix_let3,
         case: "../test_cases/let/3.nix",
         expected:
-            NixFunc::Let(
+            NixExpr::Let(
                 vec!(NixBinding{
                         lhs: NixAttrPath::Simple(NixAttrElem::Attr(NixIdentifier::Ident("x".to_string()))),
-                        rhs: NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::String(("".to_string()))))))
+                        rhs: NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::String(("".to_string())))))
                     }),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
         ),
         func: nix_let
      );
@@ -1020,7 +1009,7 @@ mod tests {
         name: nix_let4,
         case: "../test_cases/let/4.nix",
         expected:
-            NixFunc::Let(
+            NixExpr::Let(
                 vec!(NixBinding{
                         lhs: NixAttrPath::Path(
                             vec!(
@@ -1028,9 +1017,9 @@ mod tests {
                                 NixAttrElem::Attr(NixIdentifier::Ident("y".to_string()))
                             )
                         ),
-                        rhs: NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::String(("".to_string()))))))
+                        rhs: NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::String(("".to_string())))))
                     }),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
         ),
         func: nix_let
      );
@@ -1039,7 +1028,7 @@ mod tests {
         name: nix_let5,
         case: "../test_cases/let/5.nix",
         expected:
-            NixFunc::Let(
+            NixExpr::Let(
                 vec!(NixBinding{
                         lhs: NixAttrPath::Path(
                             vec!(
@@ -1047,9 +1036,9 @@ mod tests {
                                 NixAttrElem::Attr(NixIdentifier::Ident("y".to_string()))
                             )
                         ),
-                        rhs: NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::String(("".to_string()))))))
+                        rhs: NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::String(("".to_string())))))
                     }),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
         ),
         func: nix_let
      );
@@ -1058,7 +1047,7 @@ mod tests {
         name: nix_let6,
         case: "../test_cases/let/6.nix",
         expected:
-            NixFunc::Let(
+            NixExpr::Let(
                 vec!(NixBinding{
                         lhs: NixAttrPath::Path(
                             vec!(
@@ -1066,9 +1055,9 @@ mod tests {
                                 NixAttrElem::StringAttr(NixStringAttr::String("y z".to_string()))
                             )
                         ),
-                        rhs: NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::String(("".to_string()))))))
+                        rhs: NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::String(("".to_string())))))
                     }),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
         ),
         func: nix_let
      );
@@ -1077,12 +1066,12 @@ mod tests {
         name: nix_let7,
         case: "../test_cases/let/7.nix",
         expected:
-            NixFunc::Let(
+            NixExpr::Let(
                 vec!(NixBinding{
                         lhs: NixAttrPath::Simple(NixAttrElem::Attr(NixIdentifier::Ident("x".to_string()))),
-                        rhs: NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::List(vec!(NixValue::Integer(1)))))))
+                        rhs: NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::List(vec!(NixValue::Integer(1))))))
                     }),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
         ),
         func: nix_let
      );
@@ -1097,7 +1086,7 @@ mod tests {
                         lhs: NixAttrPath::Simple(
                                 NixAttrElem::Attr(NixIdentifier::Ident("name".to_string()))
                             ),
-                        rhs: NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::String(("hej".to_string()))))))
+                        rhs: NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::String(("hej".to_string())))))
                     }
                 )
         ),
@@ -1114,7 +1103,7 @@ mod tests {
                         lhs: NixAttrPath::Simple(
                                 NixAttrElem::Attr(NixIdentifier::Ident("name".to_string()))
                             ),
-                        rhs: NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::String(("hej".to_string()))))))
+                        rhs: NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::String(("hej".to_string())))))
                     }
                 )
         ),
@@ -1125,9 +1114,9 @@ mod tests {
         name: nix_func1,
         case: "../test_cases/func/1.nix",
         expected:
-            NixFunc::NamedFunc(
+            NixExpr::NamedFunc(
                 NixIdentifier::Ident("x".to_string())
-                ,Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
+                ,Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
         ),
         func: nix_named_func
      );
@@ -1136,9 +1125,9 @@ mod tests {
         name: nix_func2,
         case: "../test_cases/func/2.nix",
         expected:
-            NixFunc::NamedFunc(
+            NixExpr::NamedFunc(
                 NixIdentifier::Ident("x".to_string())
-                ,Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
+                ,Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
         ),
         func: nix_named_func
      );
@@ -1185,11 +1174,11 @@ mod tests {
         name: nix_anon_lambda1,
         case: "../test_cases/anon_lambda/1.nix",
         expected:
-            NixFunc::AnonLambda(
+            NixExpr::AnonLambda(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string()))
                 ),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_anon_lambda
      );
@@ -1198,12 +1187,12 @@ mod tests {
         name: nix_anon_lambda2,
         case: "../test_cases/anon_lambda/2.nix",
         expected:
-            NixFunc::AnonLambda(
+            NixExpr::AnonLambda(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
                 ),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_anon_lambda
      );
@@ -1212,12 +1201,12 @@ mod tests {
         name: nix_anon_lambda3,
         case: "../test_cases/anon_lambda/3.nix",
         expected:
-            NixFunc::AnonLambda(
+            NixExpr::AnonLambda(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
                 ),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_anon_lambda
      );
@@ -1226,13 +1215,13 @@ mod tests {
         name: nix_anon_lambda4,
         case: "../test_cases/anon_lambda/4.nix",
         expected:
-            NixFunc::AnonLambda(
+            NixExpr::AnonLambda(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string())),
                      NixFormal::Ellipsis
                 ),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_anon_lambda
      );
@@ -1241,12 +1230,12 @@ mod tests {
         name: nix_anon_lambda5,
         case: "../test_cases/anon_lambda/5.nix",
         expected:
-            NixFunc::AnonLambda(
+            NixExpr::AnonLambda(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
                 ),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_anon_lambda
      );
@@ -1255,12 +1244,12 @@ mod tests {
         name: nix_lambda_named_pattern_after1,
         case: "../test_cases/lambda_named_pattern_after/1.nix",
         expected:
-            NixFunc::LambdaNamedAfter(
+            NixExpr::LambdaNamedAfter(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string()))
                 ),
                 NixIdentifier::Ident("func1".to_string()),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_lambda_named_pattern_after
      );
@@ -1269,13 +1258,13 @@ mod tests {
         name: nix_lambda_named_pattern_after2,
         case: "../test_cases/lambda_named_pattern_after/2.nix",
         expected:
-            NixFunc::LambdaNamedAfter(
+            NixExpr::LambdaNamedAfter(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
                 ),
                 NixIdentifier::Ident("func1".to_string()),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_lambda_named_pattern_after
      );
@@ -1284,13 +1273,13 @@ mod tests {
         name: nix_lambda_named_pattern_after3,
         case: "../test_cases/lambda_named_pattern_after/3.nix",
         expected:
-            NixFunc::LambdaNamedAfter(
+            NixExpr::LambdaNamedAfter(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
                 ),
                 NixIdentifier::Ident("func1".to_string()),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_lambda_named_pattern_after
      );
@@ -1299,14 +1288,14 @@ mod tests {
         name: nix_lambda_named_pattern_after4,
         case: "../test_cases/lambda_named_pattern_after/4.nix",
         expected:
-            NixFunc::LambdaNamedAfter(
+            NixExpr::LambdaNamedAfter(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string())),
                      NixFormal::Ellipsis
                 ),
                 NixIdentifier::Ident("func1".to_string()),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_lambda_named_pattern_after
      );
@@ -1315,13 +1304,13 @@ mod tests {
         name: nix_lambda_named_pattern_after5,
         case: "../test_cases/lambda_named_pattern_after/5.nix",
         expected:
-            NixFunc::LambdaNamedAfter(
+            NixExpr::LambdaNamedAfter(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
                 ),
                 NixIdentifier::Ident("func1".to_string()),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_lambda_named_pattern_after
      );
@@ -1337,12 +1326,12 @@ mod tests {
         name: nix_lambda_named_pattern_before1,
         case: "../test_cases/lambda_named_pattern_before/1.nix",
         expected:
-            NixFunc::LambdaNamedBefore(
+            NixExpr::LambdaNamedBefore(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string()))
                 ),
                 NixIdentifier::Ident("func1".to_string()),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_lambda_named_pattern_before
      );
@@ -1351,13 +1340,13 @@ mod tests {
         name: nix_lambda_named_pattern_before2,
         case: "../test_cases/lambda_named_pattern_before/2.nix",
         expected:
-            NixFunc::LambdaNamedBefore(
+            NixExpr::LambdaNamedBefore(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
                 ),
                 NixIdentifier::Ident("func1".to_string()),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_lambda_named_pattern_before
      );
@@ -1366,13 +1355,13 @@ mod tests {
         name: nix_lambda_named_pattern_before3,
         case: "../test_cases/lambda_named_pattern_before/3.nix",
         expected:
-            NixFunc::LambdaNamedBefore(
+            NixExpr::LambdaNamedBefore(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
                 ),
                 NixIdentifier::Ident("func1".to_string()),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_lambda_named_pattern_before
      );
@@ -1381,14 +1370,14 @@ mod tests {
         name: nix_lambda_named_pattern_before4,
         case: "../test_cases/lambda_named_pattern_before/4.nix",
         expected:
-            NixFunc::LambdaNamedBefore(
+            NixExpr::LambdaNamedBefore(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string())),
                      NixFormal::Ellipsis
                 ),
                 NixIdentifier::Ident("func1".to_string()),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_lambda_named_pattern_before
      );
@@ -1397,13 +1386,13 @@ mod tests {
         name: nix_lambda_named_pattern_before5,
         case: "../test_cases/lambda_named_pattern_before/5.nix",
         expected:
-            NixFunc::LambdaNamedBefore(
+            NixExpr::LambdaNamedBefore(
                 vec!(
                      NixFormal::Identifier(NixIdentifier::Ident("name1".to_string())),
                      NixFormal::Identifier(NixIdentifier::Ident("name2".to_string()))
                 ),
                 NixIdentifier::Ident("func1".to_string()),
-                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
+                Box::new(NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))))
             ),
         func: nix_lambda_named_pattern_before
      );
@@ -1411,7 +1400,7 @@ mod tests {
     mk_parse_test!(
         name: nix_comment1,
         case: "../test_cases/comments/1.nix",
-        expected: NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true))))),
+        expected: NixExpr::Application(vec!(NixExprSelect::Simple(NixValue::Boolean(true)))),
         func: nix_expr
      );
 

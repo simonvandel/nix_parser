@@ -46,7 +46,8 @@ fn main() {
 
 fn pretty_format(expr: &NixExpr) -> String {
     let pretty_str = match *expr {
-        NixExpr::Func(ref func) => "func"
+        NixExpr::Assert(_, _) => "assert",
+        _ => "asdad"
     };
 
     pretty_str.to_string()
