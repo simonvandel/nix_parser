@@ -27,7 +27,27 @@ fn main() {
     let input_file_path = matches.value_of("INPUT").map(Path::new).unwrap();
     let mut input_file_content = Vec::new();
 
-    let _ = File::open(&input_file_path)
+    let res = File::open(&input_file_path)
         .and_then(|mut file| file.read_to_end(&mut input_file_content))
-        .map(|_|println!("{:?}", nix_expr(input_file_content.as_slice())));
+        .map(|_| {
+            match nix_expr(input_file_content.as_slice()) {
+                // TODO: The clone is ugly, fix it
+                IResult::Done(x, ref output) if x.is_empty() => output.clone(),
+                IResult::Done(not_consumed, _) =>
+                    panic!("Reached Done, but did not consume the whole input file. Not consumed: {:?}", not_consumed),
+                IResult::Incomplete(rest) => panic!("Incomplete with rest: {:?}", rest),
+                IResult::Error(err) => panic!("Incomplete with rest: {:?}", err)
+            }
+        })
+        .map(|nix_expr| pretty_format(&nix_expr));
+
+    println!("{:?}", res);
+}
+
+fn pretty_format(expr: &NixExpr) -> String {
+    let pretty_str = match *expr {
+        NixExpr::Func(ref func) => "func"
+    };
+
+    pretty_str.to_string()
 }

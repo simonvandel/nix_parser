@@ -1,7 +1,8 @@
 #[macro_use]
 extern crate nom;
 
-use nom::*;
+pub use nom::IResult;
+use nom::{multispace, not_line_ending, line_ending, digit, is_alphanumeric, ErrorKind, is_alphabetic, InputLength, Err};
 use std::str;
 use std::fmt::*;
 
@@ -815,7 +816,6 @@ named!(pub nix_list<&[u8], NixValue>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nom::{IResult};
 
     // Helper macro for defining parser tests
     macro_rules! mk_parse_test {
