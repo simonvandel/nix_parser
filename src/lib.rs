@@ -188,6 +188,7 @@ named!(pub nix_value<&[u8], NixValue>,
         |   nix_path
         |   nix_rec_binding
         |   nix_curly_binding
+        |   nix_list
         // identifier is the last option so it does not interfere with keyword parsers like null and boolean
         |   map!(call!(trace, "nix_value: ident", nix_identifier), NixValue::Ident)
         ),
@@ -1066,6 +1067,20 @@ mod tests {
                             )
                         ),
                         rhs: NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::String(("".to_string()))))))
+                    }),
+                Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
+        ),
+        func: nix_let
+     );
+
+    mk_parse_test!(
+        name: nix_let7,
+        case: "../test_cases/let/7.nix",
+        expected:
+            NixFunc::Let(
+                vec!(NixBinding{
+                        lhs: NixAttrPath::Simple(NixAttrElem::Attr(NixIdentifier::Ident("x".to_string()))),
+                        rhs: NixExpr::Func(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::List(vec!(NixValue::Integer(1)))))))
                     }),
                 Box::new(NixFunc::Application(vec!(NixExprSelect::Simple(NixValue::Integer(2))))),
         ),
