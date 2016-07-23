@@ -5,7 +5,7 @@ authors = ["Simon Vandel Sillesen <simon.vandel@gmail.com>"]
 repository = "https://github.com/simonvandel/nix_parser"
 
 [dependencies]
-nom = "^1.2.3"
+nom = "^1.2.4"
 itertools = "0.4.16"
 
 [dev-dependencies]
